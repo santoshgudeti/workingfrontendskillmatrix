@@ -65,11 +65,30 @@ const CandidateDetailsPage = () => {
     recommendation: 'pending' // pending, proceed, reject
   });
 
+  // Compute a human-friendly display name (avoid showing email as name)
+  const computeDisplayName = (name, email) => {
+    if (name && typeof name === 'string' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(name)) {
+      return name.trim();
+    }
+    if (email && typeof email === 'string') {
+      const raw = email.split('@')[0].replace(/[._-]+/g, ' ');
+      const pretty = raw
+        .split(' ')
+        .filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ')
+        .trim();
+      return pretty || 'Candidate';
+    }
+    return 'Candidate';
+  };
+  const displayName = computeDisplayName(candidateData?.name, candidateData?.email);
+
   // Compose placeholders into the current draft HTML
   const composeOfferHtml = (baseHtml) => {
     let html = baseHtml || offerHtml || '';
     const candidateFullBlock = [
-      candidateData?.name || candidateData?.email || 'Candidate',
+      displayName,
       candidateData?.employeeId ? `Employee Id: ${candidateData.employeeId}` : '',
       candidateData?.address ? `Address: ${candidateData.address}` : '',
     ]
@@ -213,7 +232,7 @@ const CandidateDetailsPage = () => {
   const buildOfferHtml = () => {
     const companyName = 'Your Company';
     const jobTitle = offerData.position || assessmentData?.jobTitle || 'Position';
-    const candidateName = candidateData?.name || candidateData?.email || 'Candidate';
+    const candidateName = displayName;
     const startDate = offerData.startDate ? new Date(offerData.startDate).toLocaleDateString() : 'To be determined';
     const today = new Date().toLocaleDateString();
     const benefitsList = (offerData.benefits || '').split('\n').filter(Boolean).map(b => `<li>${b}</li>`).join('');
@@ -341,7 +360,7 @@ const CandidateDetailsPage = () => {
 
   const handleExternalScheduling = async (platform) => {
     const candidateEmail = candidateData?.email || '';
-    const candidateName = candidateData?.name || 'Candidate';
+    const candidateName = displayName;
     const jobTitle = assessmentData?.jobTitle || 'Position';
     const hrEmail = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')).email : '';
 
@@ -592,7 +611,7 @@ const CandidateDetailsPage = () => {
               </Button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">
-                  {candidateData.name || 'Candidate Details'}
+                  {displayName || 'Candidate Details'}
                 </h1>
                 <p className="text-gray-600">{candidateData.email}</p>
               </div>
