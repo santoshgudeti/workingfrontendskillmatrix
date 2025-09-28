@@ -555,11 +555,22 @@ const AdvancedOfferEditor = ({
         candidateName: candidateData.name || candidateData.email || '',
         candidateEmail: candidateData.email || '',
         position: assessmentData.jobTitle || '',
-        interviewDate: new Date().toLocaleDateString()
+        interviewDate: new Date().toISOString().split('T')[0] // Format as YYYY-MM-DD for date input
       }));
       loadOfferDraft();
     }
   }, [isOpen, selectedTemplate, candidateData, assessmentData]);
+
+  // Auto-update offer letter when form data changes
+  useEffect(() => {
+    if (isOpen && Object.keys(offerData).some(key => offerData[key])) {
+      const debounceTimer = setTimeout(() => {
+        updateOfferContent();
+      }, 500); // Debounce to avoid too many API calls
+      
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [offerData, selectedTemplate, isOpen]);
 
   // Validation function
   const validateForm = () => {
@@ -627,7 +638,8 @@ const AdvancedOfferEditor = ({
       const response = await axiosInstance.post('/api/offers/draft', {
         candidateId: candidateData._id,
         assessmentSessionId: assessmentData._id,
-        template: selectedTemplate
+        template: selectedTemplate,
+        offerData: offerData // Send current form data
       });
       
       if (response.data.draftHtml) {
@@ -638,6 +650,27 @@ const AdvancedOfferEditor = ({
       toast.error('Failed to load offer template');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Function to update offer content with current form data
+  const updateOfferContent = async () => {
+    if (!candidateData || !assessmentData) return;
+    
+    try {
+      const response = await axiosInstance.post('/api/offers/draft', {
+        candidateId: candidateData._id,
+        assessmentSessionId: assessmentData._id,
+        template: selectedTemplate,
+        offerData: offerData // Send current form data for real-time updates
+      });
+      
+      if (response.data.draftHtml) {
+        setOfferContent(response.data.draftHtml);
+      }
+    } catch (error) {
+      console.error('Error updating offer content:', error);
+      // Don't show error toast for auto-updates to avoid spam
     }
   };
 
