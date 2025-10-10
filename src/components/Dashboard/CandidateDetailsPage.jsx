@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -34,9 +34,14 @@ import {
   faExternalLinkAlt,
   faChevronDown,
   faChevronUp,
+  faFileUpload,
+  faSync,
+  faFile,
+  faPaperclip,
+  faTimes
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle as faGoogleBrand, faMicrosoft as faMicrosoftBrand} from '@fortawesome/free-brands-svg-icons';
-import { toast } from 'react-toastify';
+import { debouncedToast, documentToast, useEffectToast } from '../../utils/toastUtils';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,6 +49,7 @@ import { axiosInstance } from '../../axiosUtils';
 import { Button } from '../ui/Button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../ui/Dialog';
 import AdvancedOfferEditor from './AdvancedOfferEditor';
+import DocumentCollectionForm from './DocumentCollection/DocumentCollectionForm';
 
 const CandidateDetailsPage = () => {
   const { candidateId, assessmentSessionId } = useParams();
@@ -64,25 +70,224 @@ const CandidateDetailsPage = () => {
     areasForImprovement: '',
     recommendation: 'pending' // pending, proceed, reject
   });
+  const [showDocumentCollectionModal, setShowDocumentCollectionModal] = useState(false);
+  // 🔥 ENHANCED STATE MANAGEMENT: Centralized document status with better initialization
+  const [documentCollectionState, setDocumentCollectionState] = useState({
+    status: 'unknown', // unknown, requested, uploaded, verified, rejected
+    collection: null,
+    collectionId: null,
+    lastUpdate: null,
+    isLoading: false,
+    error: null
+  });
+  
+  // Derived state for backward compatibility
+  const documentCollectionStatus = documentCollectionState.status;
+  const documentCollection = documentCollectionState.collection;
+  const documentCollectionId = documentCollectionState.collectionId;
+  
+  // Legacy setters for backward compatibility
+  const setDocumentCollectionStatus = (status) => {
+    setDocumentCollectionState(prev => ({
+      ...prev,
+      status: typeof status === 'function' ? status(prev.status) : status,
+      lastUpdate: Date.now()
+    }));
+  };
+  
+  const setDocumentCollection = (collection) => {
+    setDocumentCollectionState(prev => ({
+      ...prev,
+      collection: typeof collection === 'function' ? collection(prev.collection) : collection,
+      lastUpdate: Date.now()
+    }));
+  };
+  
+  const setDocumentCollectionId = (id) => {
+    setDocumentCollectionState(prev => ({
+      ...prev,
+      collectionId: typeof id === 'function' ? id(prev.collectionId) : id,
+      lastUpdate: Date.now()
+    }));
+  };
+  
+  // 🔥 CENTRALIZED DOCUMENT STATUS UPDATER: Single source of truth for all document status changes
+  const updateDocumentCollectionState = useCallback((updates, source = 'unknown') => {
+    console.log('📊 [STATE UPDATE] Centralized document status update:', {
+      updates,
+      source,
+      timestamp: new Date().toISOString(),
+      currentState: documentCollectionState
+    });
+    
+    setDocumentCollectionState(prev => {
+      const newState = {
+        ...prev,
+        ...updates,
+        lastUpdate: Date.now(),
+        error: null // Clear any previous errors
+      };
+      
+      // Validate status transitions
+      const validStatuses = ['unknown', 'requested', 'uploaded', 'verified', 'rejected'];
+      if (updates.status && !validStatuses.includes(updates.status)) {
+        console.warn('⚠️ [STATE UPDATE] Invalid status transition:', updates.status);
+        return prev; // Don't update with invalid status
+      }
+      
+      console.log('✅ [STATE UPDATE] State updated successfully:', {
+        previous: prev,
+        new: newState,
+        source,
+        buttonShouldBeEnabled: newState.status === 'verified'
+      });
+      
+      // Trigger button state re-evaluation
+      setLastRefresh(Date.now());
+      
+      // Show appropriate notifications with deduplication
+      if (updates.status === 'verified' && prev.status !== 'verified' && newState.collectionId) {
+        documentToast.verified(newState.collectionId, candidateData?.name || displayName);
+      } else if (updates.status === 'rejected' && prev.status !== 'rejected' && newState.collectionId) {
+        documentToast.rejected(newState.collectionId, newState.rejectionReason || '');
+      }
+      
+      return newState;
+    });
+  }, [documentCollectionState]);
+  const [showRejectDocumentsModal, setShowRejectDocumentsModal] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  const [interviewEnsured, setInterviewEnsured] = useState(false); // 🔥 FIX: Track if interview was already ensured
 
   // Compute a human-friendly display name (avoid showing email as name)
   const computeDisplayName = (name, email) => {
-    if (name && typeof name === 'string' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(name)) {
+    // If we have a proper name (not an email), use it
+    if (name && typeof name === 'string' && name.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(name)) {
       return name.trim();
     }
+    // If we have an email, try to create a readable name from it
     if (email && typeof email === 'string') {
       const raw = email.split('@')[0].replace(/[._-]+/g, ' ');
       const pretty = raw
         .split(' ')
         .filter(Boolean)
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(' ')
         .trim();
       return pretty || 'Candidate';
     }
+    // Fallback
     return 'Candidate';
   };
-  const displayName = computeDisplayName(candidateData?.name, candidateData?.email);
+  
+  // Use either the displayName function or the name from candidateData
+  const displayName = candidateData?.name && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(candidateData.name) 
+    ? candidateData.name 
+    : computeDisplayName(candidateData?.name, candidateData?.email);
+
+  // Ensure an Interview exists server-side before opening feedback modal
+  const ensureInterviewForSession = async () => {
+    // 🔥 FIX: Prevent duplicate calls
+    if (interviewEnsured) {
+      console.log('⚠️ Interview already ensured, skipping duplicate call');
+      return { success: true, existed: true };
+    }
+    
+    try {
+      console.log('[Interview] Ensuring interview exists for session:', {
+        assessmentSessionId,
+        candidateId
+      });
+      
+      const response = await axiosInstance.post('/api/interviews/ensure-by-session', {
+        assessmentSessionId,
+        candidateId,
+      });
+      
+      console.log('[Interview] Ensure interview response:', response.data);
+      setInterviewEnsured(true); // 🔥 FIX: Mark as ensured
+      return response.data;
+      
+    } catch (error) {
+      console.error('Failed to ensure interview:', error);
+      console.error('Error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      
+      let errorMessage = 'Unable to prepare interview record for feedback.';
+      
+      if (error.response?.status === 404) {
+        errorMessage = 'Assessment session not found. Please verify the candidate data.';
+      } else if (error.response?.status === 400) {
+        errorMessage = 'Invalid interview data. Please check candidate and session details.';
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      
+      debouncedToast.error(`❌ ${errorMessage}`, 'interview-ensure-error');
+      throw error;
+    }
+  };
+
+  // Check existing interview status
+  const checkInterviewStatus = async () => {
+    // 🔥 FIX: Prevent multiple calls if already ensured
+    if (interviewEnsured) {
+      console.log('⚠️ Interview already ensured, skipping status check');
+      return;
+    }
+    
+    try {
+      // Try to ensure interview exists and get its status
+      const response = await axiosInstance.post('/api/interviews/ensure-by-session', {
+        assessmentSessionId,
+        candidateId,
+      });
+      
+      const interview = response.data.data;
+      
+      if (interview && interview.status) {
+        console.log('🗓️ Found existing interview with status:', interview.status);
+        
+        // 🔥 FIX: Only update status if it's a meaningful status
+        if (interview.status !== 'not-scheduled') {
+          setInterviewStatus(interview.status);
+        } else {
+          // Keep default 'not-scheduled' for proper workflow
+          setInterviewStatus('not-scheduled');
+        }
+        
+        // If interview has feedback, update the feedback state
+        if (interview.feedback) {
+          setInterviewFeedback(prev => ({
+            ...prev,
+            rating: interview.rating || 0,
+            feedback: interview.feedback || '',
+            strengths: interview.structuredFeedback?.strengths || '',
+            areasForImprovement: interview.structuredFeedback?.areasForImprovement || '',
+            recommendation: interview.structuredFeedback?.recommendation || 'pending',
+            feedbackSubmitted: !!interview.feedback
+          }));
+        }
+        
+        console.log('🔄 Interview status set to:', interview.status);
+        
+        // 🔥 FIX: Mark as ensured to prevent future duplicate calls
+        setInterviewEnsured(true);
+      } else {
+        console.log('⚠️ Interview exists but no specific status, keeping default not-scheduled');
+        setInterviewStatus('not-scheduled');
+      }
+    } catch (error) {
+      console.log('🚨 Error checking interview status (normal if no interview exists):', error.response?.status);
+      // If no interview exists or error occurs, keep default 'not-scheduled' status
+      setInterviewStatus('not-scheduled');
+    }
+  };
 
   // Compose placeholders into the current draft HTML
   const composeOfferHtml = (baseHtml) => {
@@ -115,21 +320,7 @@ const CandidateDetailsPage = () => {
       } catch { return `${n} Rupees`; }
     };
 
-  // Ensure an Interview exists server-side before opening feedback modal
-  const ensureInterviewForSession = async () => {
-    try {
-      await axiosInstance.post('/api/interviews/ensure-by-session', {
-        assessmentSessionId,
-        candidateId,
-      });
-    } catch (e) {
-      console.error('Failed to ensure interview:', e);
-      toast.error('Unable to prepare interview record for feedback.');
-      throw e;
-    }
-  };
-
-    // Sample salary split if HR didn’t provide granular inputs
+    // Sample salary split if HR didn't provide granular inputs
     // Use structured editor rows when present; otherwise estimate
     const gross = Number(String(offerData.salary || '').replace(/[^0-9.]/g, '')) || 0;
     const monthly = Math.round(gross / 12);
@@ -159,7 +350,7 @@ const CandidateDetailsPage = () => {
 
     // Terms list for templates that use {{termsBlock}}
     const termsList = [
-      'You will not publish or make public any material related to the company’s products or projects without written permission.',
+      "You will not publish or make public any material related to the company's products or projects without written permission.",
       'Maintain utmost secrecy of project documents, commercial offers, design docs, estimates, and intellectual property.',
       'Comply with all rules and regulations issued by the company.',
       'Do not disclose confidential information during or after employment.',
@@ -339,7 +530,10 @@ const CandidateDetailsPage = () => {
   const fetchCandidateDetails = async () => {
     try {
       setLoading(true);
-      console.log('Fetching candidate details for:', { candidateId, assessmentSessionId });
+      console.log('Fetching candidate details for:', {
+        candidateId: candidateId,
+        assessmentSessionId: assessmentSessionId
+      });
       
       const response = await axiosInstance.get(`/api/candidates/${candidateId}/details`, {
         params: { assessmentSessionId }
@@ -349,12 +543,280 @@ const CandidateDetailsPage = () => {
       
       setCandidateData(response.data.candidate);
       setAssessmentData(response.data.assessment);
+      
+      // Check for existing document collection
+      checkDocumentCollectionStatus();
+      
+      // Check for existing interview status
+      checkInterviewStatus();
     } catch (error) {
       console.error('Error fetching candidate details:', error);
       console.error('Error details:', error.response?.data);
-      toast.error('Failed to fetch candidate details');
+      debouncedToast.error('Failed to fetch candidate details', 'candidate-fetch');
     } finally {
       setLoading(false);
+    }
+  };
+
+
+
+  // 🔥 ENHANCED: Create controlled toast for status changes
+  const statusChangeToast = useEffectToast.createControlled('CandidateDetailsPage', 'statusChange');
+  
+  // 🔥 FIX: Add specific useEffect to monitor documentCollectionStatus changes with deduplication
+  useEffect(() => {
+    if (documentCollectionStatus) {
+      console.log('📝 Document Collection Status Changed:', {
+        newStatus: documentCollectionStatus,
+        timestamp: new Date().toISOString(),
+        shouldEnableButton: documentCollectionStatus === 'verified',
+        documentCollectionId
+      });
+      
+      // Force component re-render by updating lastRefresh
+      setLastRefresh(Date.now());
+      
+      // Show status change notification with deduplication
+      if (documentCollectionStatus === 'verified' && documentCollectionId) {
+        documentToast.verified(documentCollectionId, displayName);
+      }
+    }
+  }, [documentCollectionStatus, documentCollectionId]); // 🔥 FIX: Add documentCollectionId to dependencies
+
+  // Add useEffect to check document collection status periodically and on focus
+  useEffect(() => {
+    let intervalId;
+    
+    if (documentCollectionId) {
+      // 🔥 FIX: Check document collection status every 3 seconds (more frequent for real-time updates)
+      intervalId = setInterval(() => {
+        console.log('🔄 Periodic refresh triggered for document collection:', documentCollectionId);
+        refreshDocumentCollectionStatus();
+      }, 3000); // Reduced from 10 seconds to 3 seconds for faster updates
+    }
+    
+    // Also refresh when window gains focus
+    const handleFocus = () => {
+      if (documentCollectionId) {
+        console.log('🔄 Window focus refresh triggered');
+        refreshDocumentCollectionStatus();
+      }
+    };
+    
+    // 🔥 FIX: Also refresh when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (!document.hidden && documentCollectionId) {
+        console.log('🔄 Tab visibility refresh triggered');
+        setTimeout(() => refreshDocumentCollectionStatus(), 300);
+      }
+    };
+    
+    // Listen for document verification events from other components
+    const handleDocumentVerified = (event) => {
+      const { documentCollectionId: verifiedId, status, data, timestamp } = event.detail;
+      
+      console.log('🔔 [EVENT DEBUG] Received document verification event:', {
+        verifiedId,
+        currentId: documentCollectionId,
+        status,
+        timestamp,
+        eventData: data
+      });
+      
+      // 🔥 ENHANCED: Update states if this is our document collection using centralized updater
+      if (verifiedId === documentCollectionId) {
+        console.log('✅ [EVENT DEBUG] Event matches current document collection, updating status');
+        
+        updateDocumentCollectionState({
+          status: status,
+          collection: data || documentCollection,
+          collectionId: verifiedId
+        }, 'verification-event');
+        
+        console.log('✅ [EVENT DEBUG] States updated from verification event:', status);
+        
+        // Additional backup refresh after a delay
+        setTimeout(() => {
+          console.log('🔄 [EVENT DEBUG] Performing delayed backup refresh after event...');
+          refreshDocumentCollectionStatus();
+        }, 1000);
+      } else {
+        console.log('⚠️ [EVENT DEBUG] Event for different document collection, ignoring:', {
+          eventId: verifiedId,
+          currentId: documentCollectionId
+        });
+      }
+    };
+    
+    window.addEventListener('documentVerified', handleDocumentVerified);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    console.log('📡 [EVENT DEBUG] Event listeners attached for document collection:', {
+      documentCollectionId,
+      listenersAttached: ['documentVerified', 'focus', 'visibilitychange']
+    });
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      console.log('📡 [EVENT DEBUG] Cleaning up event listeners for:', documentCollectionId);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('documentVerified', handleDocumentVerified);
+    };
+  }, [documentCollectionId]); // 🔥 FIX: Remove documentCollectionStatus from dependencies to avoid stale closure
+
+  const refreshDocumentCollectionStatus = async () => {
+    if (documentCollectionId) {
+      try {
+        console.log('🔄 [REFRESH DEBUG] Starting document status refresh:', {
+          documentCollectionId,
+          currentStatus: documentCollectionStatus,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Set loading state
+        updateDocumentCollectionState({ isLoading: true }, 'refresh-start');
+        
+        const response = await axiosInstance.get(`/api/document-collection/${documentCollectionId}`);
+        const collectionData = response.data.data;
+        
+        console.log('📊 [REFRESH DEBUG] API Response received:', {
+          id: collectionData._id,
+          status: collectionData.status,
+          previousStatus: documentCollectionStatus,
+          documentsCount: collectionData.documents?.length || 0,
+          verifiedAt: collectionData.verifiedAt,
+          verifiedBy: collectionData.verifiedBy
+        });
+        
+        // 🔥 ENHANCED: Use centralized state updater for atomic updates
+        updateDocumentCollectionState({
+          status: collectionData.status,
+          collection: collectionData,
+          collectionId: collectionData._id,
+          isLoading: false
+        }, 'api-refresh');
+        
+        console.log('✅ [REFRESH DEBUG] Document collection status updated successfully:', {
+          newStatus: collectionData.status,
+          timestamp: new Date().toISOString(),
+          selectButtonShouldBeEnabled: collectionData.status === 'verified'
+        });
+        
+        // 🔥 FIX: Force candidate data refresh to trigger button re-evaluation
+        setCandidateData(prev => ({
+          ...prev,
+          _documentStatusUpdate: Date.now(), // Force re-evaluation of button state
+          _lastDocumentStatus: collectionData.status
+        }));
+        
+        console.log('🔄 [REFRESH DEBUG] All states updated. Component should re-render now.');
+        
+      } catch (error) {
+        console.error('❌ [REFRESH DEBUG] Error refreshing document collection status:', error);
+        
+        // Update error state
+        updateDocumentCollectionState({
+          isLoading: false,
+          error: error.message
+        }, 'api-error');
+        
+        // Try to refresh from the main list as fallback
+        console.log('🔁 [REFRESH DEBUG] Attempting fallback refresh...');
+        checkDocumentCollectionStatus();
+      }
+    } else {
+      console.log('⚠️ [REFRESH DEBUG] No document collection ID available for refresh');
+    }
+  };
+
+  const checkDocumentCollectionStatus = async () => {
+    try {
+      console.log('🔍 [CHECK DEBUG] Checking document collection status for candidate:', {
+        candidateId,
+        assessmentSessionId,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Try to find existing document collection for this candidate
+      const response = await axiosInstance.get('/api/document-collection');
+      const collections = response.data.data;
+      
+      console.log('📋 [CHECK DEBUG] All document collections:', {
+        totalCollections: collections.length,
+        targetCandidate: candidateId,
+        targetAssessment: assessmentSessionId
+      });
+      
+      // Find collection for this candidate and assessment - 🔥 FIX: Handle populated candidateId objects
+      const collection = collections.find(col => {
+        // Handle both populated objects and direct IDs
+        const colCandidateId = col.candidateId?._id || col.candidateId;
+        const colAssessmentId = col.assessmentSessionId?._id || col.assessmentSessionId;
+        
+        const candidateMatch = colCandidateId?.toString() === candidateId?.toString();
+        const assessmentMatch = colAssessmentId?.toString() === assessmentSessionId?.toString();
+        
+        console.log('🔍 [CHECK DEBUG] Collection matching:', {
+          collectionId: col._id,
+          colCandidateId: colCandidateId?.toString(),
+          targetCandidateId: candidateId,
+          candidateMatch,
+          colAssessmentId: colAssessmentId?.toString(),  
+          targetAssessmentId: assessmentSessionId,
+          assessmentMatch,
+          overallMatch: candidateMatch && assessmentMatch
+        });
+        
+        return candidateMatch && assessmentMatch;
+      });
+      
+      if (collection) {
+        console.log('✅ [CHECK DEBUG] Found document collection:', {
+          id: collection._id,
+          status: collection.status,
+          documentsCount: collection.documents?.length || 0,
+          candidateName: collection.candidateName
+        });
+        
+        // 🔥 FIX: Use centralized state updater instead of individual setters
+        updateDocumentCollectionState({
+          status: collection.status,
+          collection: collection,
+          collectionId: collection._id
+        }, 'initial-check');
+        
+        console.log('✅ [CHECK DEBUG] Document collection state updated successfully');
+        
+        // Show info message for uploaded but not verified documents with deduplication
+        if (collection.status === 'uploaded') {
+          documentToast.uploaded(collection._id, collection.candidateName || displayName);
+        } else if (collection.status === 'verified') {
+          documentToast.verified(collection._id, collection.candidateName || displayName);
+        }
+      } else {
+        console.log('⚠️ [CHECK DEBUG] No document collection found for this candidate');
+        
+        // Reset to unknown state
+        updateDocumentCollectionState({
+          status: 'unknown',
+          collection: null,
+          collectionId: null
+        }, 'no-collection-found');
+      }
+    } catch (error) {
+      console.error('❌ [CHECK DEBUG] Error checking document collection status:', error);
+      
+      // Set error state
+      updateDocumentCollectionState({
+        status: 'unknown',
+        collection: null,
+        collectionId: null,
+        error: error.message
+      }, 'check-error');
     }
   };
 
@@ -383,28 +845,86 @@ const CandidateDetailsPage = () => {
         calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventTitle)}&details=${encodeURIComponent(eventDescription)}&add=${encodeURIComponent(candidateEmail)}`;
     }
 
-    // Ensure interview exists and mark as scheduled locally
+    // Ensure interview exists and mark as scheduled
     try {
+      console.log('📅 External scheduling initiated:', {
+        platform,
+        candidateEmail,
+        candidateName,
+        jobTitle
+      });
+      
       await ensureInterviewForSession();
+      
+      // 🔥 FIX: Update interview status to 'scheduled' in backend
+      try {
+        await axiosInstance.put('/api/interviews/update-status', {
+          assessmentSessionId,
+          candidateId,
+          status: 'scheduled',
+          platform: platform === 'google-meet' ? 'Google Calendar' : platform === 'microsoft-teams' ? 'Microsoft Teams' : 'Zoom'
+        });
+        
+        console.log('✅ Interview status updated to scheduled in backend');
+      } catch (statusError) {
+        console.error('❌ Failed to update interview status in backend:', statusError);
+        // Continue with local state update as fallback
+      }
+      
+      // Update local state
       setInterviewStatus('scheduled');
+      
+      console.log('✅ Interview status updated to scheduled locally');
     } catch (e) {
-      // ensureInterviewForSession has its own toast on failure; continue to open calendar anyway
+      console.error('❌ Error ensuring interview for session:', e);
+      // Continue to open calendar anyway
     }
+    
     setShowSchedulingDropdown(false);
     
     // Open external calendar platform
     window.open(calendarUrl, '_blank', 'noopener,noreferrer');
     
-    toast.success(`Opening ${platform === 'google-meet' ? 'Google Calendar' : platform === 'microsoft-teams' ? 'Microsoft Teams' : 'Zoom'} for scheduling. Status marked as Scheduled.`);
+    debouncedToast.success(`📅 Opening ${platform === 'google-meet' ? 'Google Calendar' : platform === 'microsoft-teams' ? 'Microsoft Teams' : 'Zoom'} for scheduling. Status marked as Scheduled.`, 
+      `schedule-${platform}`);
   };
 
   const handleInterviewCompleted = async () => {
     try {
+      console.log('[Interview] Marking interview as completed:', {
+        candidateId,
+        assessmentSessionId,
+        currentStatus: interviewStatus
+      });
+      
       await ensureInterviewForSession();
       setInterviewStatus('completed');
-      toast.success('Interview marked as completed. Please add feedback.');
-    } catch (e) {
-      // ensureInterviewForSession already toasts on failure
+      
+      debouncedToast.success('✅ Interview marked as completed. Please add feedback.', 
+        'interview-completed', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      
+      // Automatically open feedback modal after marking complete
+      setTimeout(() => {
+        setShowFeedbackModal(true);
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Error marking interview as completed:', error);
+      debouncedToast.error('❌ Failed to mark interview as completed. Please try again.', 'interview-complete-error');
+      
+      // Provide more specific error feedback
+      if (error.response?.status === 404) {
+        debouncedToast.error('⚠️ Interview session not found. Please ensure the interview was properly scheduled.', 'interview-not-found');
+      } else if (error.response?.status === 400) {
+        debouncedToast.error('⚠️ Invalid interview data. Please check the candidate and assessment details.', 'interview-invalid');
+      }
     }
   };
 
@@ -416,7 +936,7 @@ const CandidateDetailsPage = () => {
         ...interviewFeedback
       });
       
-      toast.success('Interview feedback submitted successfully!');
+      debouncedToast.success('Interview feedback submitted successfully!', 'feedback-submit');
       setShowFeedbackModal(false);
       
       // Enable decision making after feedback is submitted
@@ -424,7 +944,7 @@ const CandidateDetailsPage = () => {
       
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      toast.error('Failed to submit feedback');
+      debouncedToast.error('Failed to submit feedback', 'feedback-error');
     }
   };
 
@@ -433,19 +953,27 @@ const CandidateDetailsPage = () => {
     
     // Check if feedback is required and not submitted
     if (interviewStatus === 'completed' && !interviewFeedback.feedbackSubmitted) {
-      toast.warning('Please submit interview feedback before making a decision.');
+      debouncedToast.warning('Please submit interview feedback before making a decision.', 'feedback-required');
       setShowFeedbackModal(true);
+      return;
+    }
+
+    // Check if documents have been collected and verified
+    if (documentCollectionStatus !== 'verified') {
+      debouncedToast.warning('Please collect and verify required documents before sending the offer letter.', 'docs-required');
+      // Show the document collection modal
+      handleRequestDocuments();
       return;
     }
 
     // Validate required offer fields
     if (!offerPayload.position || !offerPayload.salary || !offerPayload.startDate) {
-      toast.error('Please fill Position, Salary, and Start Date before sending the offer.');
+      debouncedToast.error('Please fill Position, Salary, and Start Date before sending the offer.', 'offer-fields-required');
       return;
     }
     
     if (!offerPayload.offerContent || offerPayload.offerContent.trim().length < 30) {
-      toast.error('Offer content is empty. Please review and update the letter.');
+      debouncedToast.error('Offer content is empty. Please review and update the letter.', 'offer-content-empty');
       return;
     }
 
@@ -456,18 +984,19 @@ const CandidateDetailsPage = () => {
         assessmentSessionId,
         offerData: offerPayload,
         offerHtml: offerPayload.offerContent, // HTML content for PDF generation
-        interviewFeedback: interviewFeedback.feedbackSubmitted ? interviewFeedback : null
+        interviewFeedback: interviewFeedback.feedbackSubmitted ? interviewFeedback : null,
+        documentCollectionId
       });
       console.log('[API] /api/candidates/select response', response?.data);
       
-      toast.success('Professional offer letter sent to candidate with PDF attachment!');
-      toast.success('HR copy sent successfully!');
+      debouncedToast.success('Professional offer letter sent to candidate with PDF attachment!', 'offer-sent');
+      debouncedToast.success('HR copy sent successfully!', 'hr-copy-sent');
       setShowOfferModal(false);
       navigate('/dashboard/candidates');
       
     } catch (error) {
       console.error('Error selecting candidate:', error);
-      toast.error('Failed to send offer letter');
+      debouncedToast.error('Failed to send offer letter', 'offer-send-error');
     } finally {
       setIsSubmittingOffer(false);
     }
@@ -504,35 +1033,42 @@ const CandidateDetailsPage = () => {
       });
       console.log('[API] /api/candidates/reject response', response?.data);
       
-      toast.success('Candidate rejected successfully!');
-      toast.success(`Professional rejection email sent to ${candidateData.email}`);
+      debouncedToast.success('Candidate rejected successfully!', 'candidate-rejected');
+      debouncedToast.success(`Professional rejection email sent to ${candidateData.email}`, 'rejection-email-sent');
       setShowRejectModal(false);
       navigate('/dashboard/candidates');
       
     } catch (error) {
       console.error('Error rejecting candidate:', error);
-      toast.error('Failed to reject candidate');
+      debouncedToast.error('Failed to reject candidate', 'reject-candidate-error');
     } finally {
       setIsSubmittingReject(false);
     }
   };
 
-  const viewDocument = async (type, documentId) => {
+  const viewDocument = async (documentCollectionId, documentIndex) => {
     try {
-      const endpoint = type === 'resume' 
-        ? `/api/resumes/${documentId}` 
-        : `/api/job-descriptions/${documentId}`;
+      // Use view=true parameter for inline viewing with signed URLs
+      const response = await axiosInstance.get(`/api/document-collection/${documentCollectionId}/documents/${documentIndex}?view=true`);
       
-      const response = await axiosInstance.get(endpoint);
-      
-      if (response.data.url) {
-        window.open(response.data.url, '_blank', 'noopener,noreferrer');
+      if (response.data.success && response.data.url) {
+        console.log('Opening document for viewing:', {
+          url: response.data.url,
+          filename: response.data.filename,
+          mode: response.data.mode
+        });
+        
+        // Open in new tab for inline viewing
+        window.open(response.data.url, '_blank');
+        
+        // Show success notification
+        debouncedToast.success(`📄 Opening ${response.data.filename} for viewing`, 'doc-view-success');
       } else {
-        toast.error(`Failed to view ${type}`);
+        debouncedToast.error('❌ Failed to generate viewing link for document', 'doc-view-link-error');
       }
     } catch (error) {
-      console.error(`Error viewing ${type}:`, error);
-      toast.error(`Failed to view ${type}`);
+      console.error('Error viewing document:', error);
+      debouncedToast.error('❌ Failed to view document', 'doc-view-error');
     }
   };
 
@@ -560,6 +1096,143 @@ const CandidateDetailsPage = () => {
     } catch (error) {
       console.error(`Error downloading ${type}:`, error);
       toast.error(`Failed to download ${type}`);
+    }
+  };
+
+  const handleRequestDocuments = () => {
+    setShowDocumentCollectionModal(true);
+  };
+
+  const handleDocumentsUploaded = async (documentCollectionId) => {
+    // Update the document collection status after upload
+    if (documentCollectionId) {
+      try {
+        console.log('📎 [UPLOAD COMPLETE DEBUG] Documents uploaded, fetching updated status:', {
+          documentCollectionId,
+          timestamp: new Date().toISOString()
+        });
+        
+        const response = await axiosInstance.get(`/api/document-collection/${documentCollectionId}`);
+        const collectionData = response.data.data;
+        
+        console.log('📊 [UPLOAD COMPLETE DEBUG] Updated collection data:', {
+          id: collectionData._id,
+          status: collectionData.status,
+          documentsCount: collectionData.documents?.length || 0
+        });
+        
+        // 🔥 FIX: Use centralized state updater instead of individual setters
+        updateDocumentCollectionState({
+          status: collectionData.status,
+          collection: collectionData,
+          collectionId: documentCollectionId
+        }, 'upload-complete');
+        
+        toast.success('✅ Documents uploaded successfully! You can now verify them.');
+        
+        console.log('✅ [UPLOAD COMPLETE DEBUG] Document states updated after upload:', {
+          newStatus: collectionData.status,
+          documentsCount: collectionData.documents?.length || 0
+        });
+        
+      } catch (error) {
+        console.error('❌ [UPLOAD COMPLETE DEBUG] Error fetching updated document collection:', error);
+        
+        // Set error state
+        updateDocumentCollectionState({
+          error: error.message
+        }, 'upload-complete-error');
+      }
+    }
+  };
+
+  const verifyDocuments = async () => {
+    if (!documentCollectionId) {
+      toast.error('No document collection found');
+      return;
+    }
+    
+    try {
+      console.log('🔍 [VERIFY DEBUG] Starting document verification from CandidateDetailsPage:', {
+        documentCollectionId,
+        currentStatus: documentCollectionStatus,
+        timestamp: new Date().toISOString()
+      });
+      
+      const response = await axiosInstance.put(`/api/document-collection/${documentCollectionId}/verify`, {
+        verifiedBy: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user'))._id : null,
+        verificationNotes: 'Documents verified successfully'
+      });
+      
+      console.log('✅ [VERIFY DEBUG] Document verification API response:', {
+        success: response.data.success,
+        status: response.data.data?.status,
+        message: response.data.message
+      });
+      
+      // 🔥 FIX: Use centralized state updater instead of individual setters
+      const verifiedData = response.data.data;
+      
+      updateDocumentCollectionState({
+        status: 'verified',
+        collection: verifiedData
+      }, 'direct-verification');
+      
+      console.log('✅ [VERIFY DEBUG] Document states updated after verification');
+      
+      // Force component refresh
+      setLastRefresh(Date.now());
+      
+      // Show success message
+      toast.success('✅ Documents verified successfully! Select Candidate button is now enabled.');
+      
+      // Force a delayed refresh to ensure consistency
+      setTimeout(() => {
+        console.log('🔄 [VERIFY DEBUG] Performing delayed refresh after verification...');
+        refreshDocumentCollectionStatus();
+      }, 1000);
+      
+    } catch (error) {
+      console.error('❌ [VERIFY DEBUG] Error verifying documents:', error);
+      toast.error('❌ Failed to verify documents');
+      
+      // Set error state
+      updateDocumentCollectionState({
+        error: error.message
+      }, 'verification-error');
+    }
+  };
+
+  const rejectDocuments = async () => {
+    if (!documentCollectionId) {
+      debouncedToast.error('No document collection found', 'reject-docs-no-collection');
+      return;
+    }
+    
+    if (!rejectionReason.trim()) {
+      debouncedToast.error('Please provide a rejection reason', 'reject-docs-no-reason');
+      return;
+    }
+    
+    try {
+      const response = await axiosInstance.put(`/api/document-collection/${documentCollectionId}/reject`, {
+        rejectedBy: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user'))._id : null,
+        rejectionReason: rejectionReason
+      });
+      
+      setDocumentCollection(response.data.data); // Update with full data
+      setDocumentCollectionStatus('rejected');
+      setRejectionReason('');
+      setShowRejectDocumentsModal(false);
+      
+      // Use deduplicated toast
+      documentToast.rejected(documentCollectionId, rejectionReason);
+      
+      // Refresh the document collection status
+      setTimeout(refreshDocumentCollectionStatus, 1000);
+    } catch (error) {
+      console.error('Error rejecting documents:', error);
+      debouncedToast.error('Failed to reject documents', `reject-docs-error-${documentCollectionId}`);
     }
   };
 
@@ -686,19 +1359,54 @@ const CandidateDetailsPage = () => {
               </Button>
               )}
 
-              {/* Decision Buttons - Always visible; validation happens on submit */}
+              {/* Decision Buttons - Enhanced with optimized button component */}
               <>
-                <Button
-                  onClick={() => {
-                    console.log('[UI] Open Offer Modal');
-                    setShowOfferModal(true);
-                  }}
-                  className={`bg-green-600 hover:bg-green-700 text-white ${isSubmittingOffer ? 'opacity-70 cursor-not-allowed' : ''}`}
-                  disabled={isSubmittingOffer}
-                >
-                  <FontAwesomeIcon icon={faHandshake} className="mr-2" />
-                  {isSubmittingOffer ? 'Processing…' : 'Select Candidate'}
-                </Button>
+                {/* 🔥 DIAGNOSTIC: Real-time status monitor */}
+                <div className="mb-4 p-3 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300">
+                  <h4 className="text-sm font-semibold text-gray-600 mb-2">🔍 Document Status Diagnostic</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>Status: <span className="font-mono bg-yellow-100 px-1 rounded">{documentCollectionStatus || 'null'}</span></div>
+                    <div>Collection ID: <span className="font-mono bg-blue-100 px-1 rounded">{documentCollectionId ? 'Set' : 'null'}</span></div>
+                    <div>Collection Object: <span className="font-mono bg-green-100 px-1 rounded">{documentCollection?.status || 'null'}</span></div>
+                    <div>Last Refresh: <span className="font-mono bg-purple-100 px-1 rounded">{new Date(lastRefresh).toLocaleTimeString()}</span></div>
+                    <div>Button Enabled: <span className={`font-mono px-1 rounded ${documentCollectionStatus === 'verified' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>{documentCollectionStatus === 'verified' ? 'YES' : 'NO'}</span></div>
+                    <div>State Update: <span className="font-mono bg-orange-100 px-1 rounded">{documentCollectionState.lastUpdate ? new Date(documentCollectionState.lastUpdate).toLocaleTimeString() : 'none'}</span></div>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <button 
+                      onClick={() => {
+                        console.log('🔄 [MANUAL REFRESH] Forcing document status refresh from diagnostic panel');
+                        refreshDocumentCollectionStatus();
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      🔄 Force Refresh
+                    </button>
+                    <button 
+                      onClick={() => {
+                        console.log('📊 [STATE DEBUG] Current component state:', {
+                          documentCollectionState,
+                          documentCollectionStatus,
+                          documentCollectionId,
+                          documentCollection,
+                          lastRefresh
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
+                    >
+                      📊 Log State
+                    </button>
+                  </div>
+                </div>
+                
+                <OptimizedSelectCandidateButton 
+                  documentCollectionStatus={documentCollectionStatus}
+                  documentCollectionId={documentCollectionId}
+                  documentCollection={documentCollection}
+                  lastRefresh={lastRefresh}
+                  onSelectCandidate={() => setShowOfferModal(true)}
+                  onRefreshDocuments={refreshDocumentCollectionStatus}
+                />
                 
                 <Button
                   onClick={async () => {
@@ -745,6 +1453,153 @@ const CandidateDetailsPage = () => {
                 <div className="flex items-center text-green-600">
                   <FontAwesomeIcon icon={faCheckCircle} className="mr-1" />
                   <span className="text-sm">Feedback Submitted</span>
+                </div>
+              )}
+
+              {/* Document Collection Button - Dynamic text based on status */}
+              <Button
+                onClick={() => {
+                  setShowDocumentCollectionModal(true);
+                  // Refresh status when modal is opened
+                  setTimeout(refreshDocumentCollectionStatus, 1000);
+                }}
+                className={`${
+                  documentCollectionId 
+                    ? (documentCollectionStatus === 'verified' 
+                        ? 'bg-green-600 hover:bg-green-700' 
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                      )
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                } text-white`}
+              >
+                <FontAwesomeIcon icon={faFileUpload} className="mr-2" />
+                {documentCollectionId
+                  ? (documentCollectionStatus === 'verified' 
+                      ? 'Documents Verified ✓' 
+                      : documentCollectionStatus === 'uploaded'
+                        ? 'Documents Uploaded - Pending Verification'
+                        : documentCollectionStatus === 'rejected'
+                          ? 'Documents Rejected - Request Again'
+                          : 'Documents Requested'
+                    )
+                  : 'Request Documents'
+                }
+              </Button>
+
+              {/* Add a refresh button for document collection status */}
+              {documentCollectionId && (
+                <div className="flex gap-2">
+                  <Button
+                    onClick={refreshDocumentCollectionStatus}
+                    variant="outline"
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700"
+                  >
+                    <FontAwesomeIcon icon={faSync} className="mr-2" />
+                    Refresh Document Status
+                  </Button>
+                  
+                  {/* Debug button - remove in production */}
+                  <Button
+                    onClick={() => {
+                      console.log('DEBUG - Current States:', {
+                        documentCollectionId,
+                        documentCollectionStatus,
+                        documentCollection,
+                        candidateId,
+                        assessmentSessionId,
+                        lastRefresh: new Date(lastRefresh).toISOString()
+                      });
+                      toast.info(`Status: ${documentCollectionStatus || 'null'} | ID: ${documentCollectionId || 'null'}`);
+                    }}
+                    variant="outline"
+                    className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800 text-xs px-2"
+                  >
+                    Debug Status
+                  </Button>
+                  
+                  {/* Force verification test button */}
+                  {documentCollectionId && documentCollectionStatus === 'uploaded' && (
+                    <Button
+                      onClick={() => {
+                        console.log('🧪 Testing manual verification trigger');
+                        const testEvent = new CustomEvent('documentVerified', {
+                          detail: {
+                            documentCollectionId,
+                            status: 'verified',
+                            data: { ...documentCollection, status: 'verified' },
+                            timestamp: new Date().toISOString()
+                          }
+                        });
+                        window.dispatchEvent(testEvent);
+                        toast.info('🧪 Test verification event dispatched');
+                      }}
+                      variant="outline"
+                      className="bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs px-2"
+                    >
+                      Test Verify Event
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Document Collection Status Indicator with better feedback */}
+              {documentCollectionId && (
+                <div className="flex items-center gap-2">
+                  {documentCollectionStatus === 'requested' && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                      <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                      Documents Requested
+                    </span>
+                  )}
+                  {documentCollectionStatus === 'uploaded' && (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                        <FontAwesomeIcon icon={faFileUpload} className="mr-1" />
+                        Documents Uploaded
+                      </span>
+                      <Button
+                        onClick={verifyDocuments}
+                        variant="outline"
+                        className="bg-green-100 hover:bg-green-200 text-green-800 border-green-300 animate-pulse"
+                      >
+                        <FontAwesomeIcon icon={faCheckCircle} className="mr-1" />
+                        Verify Documents
+                      </Button>
+                      <Button
+                        onClick={() => setShowRejectDocumentsModal(true)}
+                        variant="outline"
+                        className="bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
+                      >
+                        <FontAwesomeIcon icon={faTimesCircle} className="mr-1" />
+                        Reject Documents
+                      </Button>
+                    </div>
+                  )}
+                  {documentCollectionStatus === 'verified' && (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 animate-pulse">
+                        <FontAwesomeIcon icon={faCheckCircle} className="mr-1" />
+                        Documents Verified ✓
+                      </span>
+                      <span className="text-xs text-green-600 font-medium">
+                        ✅ Select Candidate button is now enabled!
+                      </span>
+                    </div>
+                  )}
+                  {documentCollectionStatus === 'rejected' && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                      <FontAwesomeIcon icon={faTimesCircle} className="mr-1" />
+                      Documents Rejected
+                    </span>
+                  )}
+                </div>
+              )}
+              
+              {/* Show message when no documents are requested yet */}
+              {!documentCollectionId && (
+                <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+                  <FontAwesomeIcon icon={faExclamationTriangle} />
+                  <span className="text-sm font-medium">Documents not requested yet</span>
                 </div>
               )}
             </div>
@@ -874,63 +1729,131 @@ const CandidateDetailsPage = () => {
 
             {activeTab === 'documents' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Resume */}
-                  <div className="bg-white border rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <FontAwesomeIcon icon={faFileAlt} className="text-blue-600" />
-                      Resume
-                    </h3>
-                    <div className="space-y-3">
-                      <p className="text-gray-600">{candidateData.resume?.filename || 'N/A'}</p>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => viewDocument('resume', candidateData.resume?._id)}
-                        >
-                          <FontAwesomeIcon icon={faEye} className="mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => downloadDocument('resume', candidateData.resume?._id, candidateData.resume?.filename)}
-                        >
-                          <FontAwesomeIcon icon={faDownload} className="mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Job Description */}
-                  <div className="bg-white border rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <FontAwesomeIcon icon={faFileAlt} className="text-green-600" />
-                      Job Description
-                    </h3>
-                    <div className="space-y-3">
-                      <p className="text-gray-600">{assessmentData?.jobDescription?.filename || 'N/A'}</p>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => viewDocument('job-description', assessmentData?.jobDescription?._id)}
-                        >
-                          <FontAwesomeIcon icon={faEye} className="mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => downloadDocument('job-description', assessmentData?.jobDescription?._id, assessmentData?.jobDescription?.filename)}
-                        >
-                          <FontAwesomeIcon icon={faDownload} className="mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-semibold text-gray-900">Document Collection</h3>
+                  <Button
+                    onClick={() => setShowDocumentCollectionModal(true)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    <FontAwesomeIcon icon={faFileUpload} className="mr-2" />
+                    Manage Documents
+                  </Button>
                 </div>
+                
+                {documentCollectionId ? (
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-md font-medium text-gray-900">Document Collection Status</h4>
+                        <p className="text-sm text-gray-500">
+                          Collection ID: {documentCollectionId}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {documentCollectionStatus === 'requested' && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                            <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                            Documents Requested
+                          </span>
+                        )}
+                        {documentCollectionStatus === 'uploaded' && (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                              <FontAwesomeIcon icon={faFileUpload} className="mr-1" />
+                              Documents Uploaded
+                            </span>
+                            <Button
+                              onClick={verifyDocuments}
+                              variant="outline"
+                              className="bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
+                            >
+                              <FontAwesomeIcon icon={faCheckCircle} className="mr-1" />
+                              Verify Documents
+                            </Button>
+                            <Button
+                              onClick={() => setShowRejectDocumentsModal(true)}
+                              variant="outline"
+                              className="bg-red-100 hover:bg-red-200 text-red-800 border-red-300"
+                            >
+                              <FontAwesomeIcon icon={faTimesCircle} className="mr-1" />
+                              Reject Documents
+                            </Button>
+                          </div>
+                        )}
+                        {documentCollectionStatus === 'verified' && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            <FontAwesomeIcon icon={faCheckCircle} className="mr-1" />
+                            Documents Verified
+                          </span>
+                        )}
+                        {documentCollectionStatus === 'rejected' && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                            <FontAwesomeIcon icon={faTimesCircle} className="mr-1" />
+                            Documents Rejected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {documentCollection?.documents?.length > 0 && (
+                      <div className="mt-6">
+                        <h5 className="text-md font-medium text-gray-900 mb-4">Uploaded Documents</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {documentCollection.documents.map((document, index) => (
+                            <div key={index} className="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <FontAwesomeIcon icon={faFile} className="text-gray-400 text-xl" />
+                                <div>
+                                  <div className="font-medium text-gray-900">{document.name}</div>
+                                  <div className="text-sm text-gray-500">
+                                    {document.type} • {(document.size / 1024).toFixed(1)} KB
+                                  </div>
+                                  <div className="text-xs text-gray-400">
+                                    Uploaded: {new Date(document.uploadedAt).toLocaleString()}
+                                  </div>
+                                </div>
+                              </div>
+                              <Button
+                                onClick={() => viewDocument(documentCollectionId, index)}
+                                variant="outline"
+                                className="text-blue-600 hover:text-blue-800"
+                              >
+                                <FontAwesomeIcon icon={faEye} className="mr-1" />
+                                View
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="mt-6 flex gap-3">
+                      <Button
+                        onClick={refreshDocumentCollectionStatus}
+                        variant="outline"
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      >
+                        <FontAwesomeIcon icon={faSync} className="mr-2" />
+                        Refresh Status
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-lg shadow p-6 text-center">
+                    <FontAwesomeIcon icon={faFileUpload} className="text-gray-400 text-3xl mb-4" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">No Document Collection</h4>
+                    <p className="text-gray-500 mb-4">
+                      No documents have been requested from this candidate yet.
+                    </p>
+                    <Button
+                      onClick={() => setShowDocumentCollectionModal(true)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >
+                      <FontAwesomeIcon icon={faPaperclip} className="mr-2" />
+                      Request Documents
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1121,9 +2044,195 @@ const CandidateDetailsPage = () => {
             </div>
           </div>
         </Dialog>
+
+        {/* Document Collection Modal */}
+        <AnimatePresence>
+          {showDocumentCollectionModal && (
+            <DocumentCollectionForm
+              candidateId={candidateId}
+              assessmentSessionId={assessmentSessionId}
+              candidateData={candidateData}
+              onClose={() => setShowDocumentCollectionModal(false)}
+              onDocumentsUploaded={handleDocumentsUploaded}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Reject Documents Modal */}
+        <AnimatePresence>
+          {showRejectDocumentsModal && (
+            <motion.div 
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.div 
+                className="bg-white rounded-2xl w-full max-w-md shadow-2xl"
+                initial={{ y: 50, opacity: 0, scale: 0.95 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 50, opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              >
+                <div className="sticky top-0 bg-white border-b border-gray-200 p-6 rounded-t-2xl">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-orange-600 rounded-xl flex items-center justify-center">
+                        <FontAwesomeIcon icon={faTimesCircle} className="text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900">Reject Documents</h2>
+                        <p className="text-gray-600 text-sm">Provide a reason for rejecting the documents</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowRejectDocumentsModal(false);
+                        setRejectionReason('');
+                      }}
+                      className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors duration-200"
+                    >
+                      <FontAwesomeIcon icon={faTimes} className="text-gray-500" />
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6 space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Rejection Reason <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      placeholder="Please provide a reason for rejecting these documents..."
+                    />
+                  </div>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowRejectDocumentsModal(false);
+                        setRejectionReason('');
+                      }}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={rejectDocuments}
+                      disabled={!rejectionReason.trim()}
+                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                    >
+                      <FontAwesomeIcon icon={faTimesCircle} className="mr-2" />
+                      Reject Documents
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </motion.div>
     </div>
   );
 };
+
+// 🔥 OPTIMIZED SELECT CANDIDATE BUTTON: Memoized component for better performance
+const OptimizedSelectCandidateButton = React.memo(({
+  documentCollectionStatus,
+  documentCollectionId,
+  documentCollection,
+  lastRefresh,
+  onSelectCandidate,
+  onRefreshDocuments
+}) => {
+  console.log('🔄 [BUTTON RENDER] OptimizedSelectCandidateButton rendering:', {
+    documentCollectionStatus,
+    isEnabled: documentCollectionStatus === 'verified',
+    timestamp: new Date().toISOString()
+  });
+  
+  const handleClick = useCallback(async () => {
+    // 🔥 DEBUG: Comprehensive button state logging
+    const currentState = {
+      documentCollectionStatus,
+      documentCollectionId,
+      documentCollection: documentCollection?.status,
+      isEnabled: documentCollectionStatus === 'verified',
+      lastRefresh: new Date(lastRefresh).toISOString(),
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('🎯 [BUTTON CLICK DEBUG] Select Candidate Button State:', currentState);
+    
+    if (documentCollectionStatus !== 'verified') {
+      console.log('❌ [BUTTON CLICK DEBUG] Documents not verified. Current status:', documentCollectionStatus);
+      console.log('🔄 [BUTTON CLICK DEBUG] Forcing document status refresh...');
+      
+      try {
+        await onRefreshDocuments();
+        console.log('✅ [BUTTON CLICK DEBUG] Refresh completed. Checking status again...');
+        
+        // Use a promise to wait for state update
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Re-check status after refresh
+        if (documentCollectionStatus === 'verified') {
+          console.log('✅ [BUTTON CLICK DEBUG] Status verified after refresh. Opening modal...');
+          onSelectCandidate();
+        } else {
+          console.log('❌ [BUTTON CLICK DEBUG] Status still not verified after refresh:', documentCollectionStatus);
+          toast.warning(`⚠️ Documents status: ${documentCollectionStatus || 'unknown'}. Please verify documents first.`);
+        }
+      } catch (error) {
+        console.error('❌ [BUTTON CLICK DEBUG] Refresh failed:', error);
+        toast.error('Failed to refresh document status');
+      }
+      return;
+    }
+    
+    console.log('✅ [BUTTON CLICK DEBUG] Documents verified. Opening offer modal...');
+    onSelectCandidate();
+  }, [documentCollectionStatus, documentCollectionId, documentCollection, lastRefresh, onSelectCandidate, onRefreshDocuments]);
+  
+  const isEnabled = documentCollectionStatus === 'verified';
+  const buttonText = isEnabled 
+    ? 'Select Candidate' 
+    : `Documents Required (${documentCollectionStatus || 'none'})`;
+  
+  return (
+    <Button
+      onClick={handleClick}
+      className={`bg-green-600 hover:bg-green-700 text-white transition-all duration-200 ${
+        !isEnabled 
+          ? 'opacity-50 cursor-not-allowed' 
+          : 'opacity-100'
+      }`}
+      disabled={!isEnabled}
+    >
+      <FontAwesomeIcon icon={faHandshake} className="mr-2" />
+      {buttonText}
+      {/* Enhanced debug info */}
+      <span className="ml-2 text-xs opacity-75">
+        {isEnabled ? '✅' : '❌'}
+      </span>
+      {/* Real-time status indicator */}
+      <span className="ml-1 text-xs opacity-60">
+        [{documentCollectionStatus || 'none'}]
+      </span>
+      {/* Debug timestamp */}
+      <span className="ml-1 text-xs opacity-40">
+        {new Date(lastRefresh).toLocaleTimeString()}
+      </span>
+    </Button>
+  );
+});
+
+OptimizedSelectCandidateButton.displayName = 'OptimizedSelectCandidateButton';
 
 export default CandidateDetailsPage;

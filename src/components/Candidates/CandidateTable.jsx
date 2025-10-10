@@ -108,6 +108,7 @@ function CandidateTable() {
   const [scoreDropdownOpen, setScoreDropdownOpen] = useState({});
   const [recordingsDropdownOpen, setRecordingsDropdownOpen] = useState({});
   const [voiceAnswersDropdownOpen, setVoiceAnswersDropdownOpen] = useState({});
+  const [mergedPdfDropdownOpen, setMergedPdfDropdownOpen] = useState({});
   
   // Refs for dropdown containers
   const resumeDropdownRefs = useRef({});
@@ -115,6 +116,7 @@ function CandidateTable() {
   const scoreDropdownRefs = useRef({});
   const recordingsDropdownRefs = useRef({});
   const voiceAnswersDropdownRefs = useRef({});
+  const mergedPdfDropdownRefs = useRef({});
 
   const filterIcons = {
     jobType: faUserTie,
@@ -328,6 +330,12 @@ function CandidateTable() {
           setVoiceAnswersDropdownOpen(prev => ({ ...prev, [key]: false }));
         }
       });
+      
+      Object.keys(mergedPdfDropdownRefs.current).forEach(key => {
+        if (mergedPdfDropdownRefs.current[key] && !mergedPdfDropdownRefs.current[key].contains(event.target)) {
+          setMergedPdfDropdownOpen(prev => ({ ...prev, [key]: false }));
+        }
+      });
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -399,6 +407,16 @@ function CandidateTable() {
         success: true,
         message: `Assessment sent to ${candidateEmail}`,
         testLink: sessionResponse.data.testLink
+      });
+      
+      // Show success toast immediately
+      toast.success(`Assessment successfully sent to ${candidateEmail}!`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
       });
       setTimeout(() => {
         setShowGenerationModal(false);
@@ -617,6 +635,79 @@ function CandidateTable() {
     } catch (error) {
       console.error('Error getting resume URL:', error);
       return '#';
+    }
+  };
+
+  // ===========================
+  // MERGED PDF HANDLERS
+  // ===========================
+  
+  const handleGenerateMergedPDF = async (assessmentSessionId) => {
+    try {
+      console.log('🔄 Generating merged PDF for session:', assessmentSessionId);
+      toast.info('🔄 Generating merged PDF...', { autoClose: 3000 });
+      
+      const response = await axiosInstance.post(`/api/merged-pdf/generate/${assessmentSessionId}`);
+      
+      if (response.data.success) {
+        const message = response.data.message;
+        toast.success(`✅ ${message}`, { autoClose: 5000 });
+        console.log('✅ Merged PDF generated:', response.data.data);
+      } else {
+        throw new Error(response.data.error || 'Failed to generate merged PDF');
+      }
+    } catch (error) {
+      console.error('❌ Error generating merged PDF:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to generate merged PDF';
+      toast.error(`❌ ${errorMessage}`, { autoClose: 5000 });
+    }
+  };
+  
+  const handleViewMergedPDF = async (assessmentSessionId) => {
+    try {
+      console.log('👁️ Viewing merged PDF for session:', assessmentSessionId);
+      
+      // First try to generate/get the merged PDF
+      const generateResponse = await axiosInstance.post(`/api/merged-pdf/generate/${assessmentSessionId}`);
+      
+      if (generateResponse.data.success && generateResponse.data.data.downloadUrl) {
+        window.open(generateResponse.data.data.downloadUrl, '_blank');
+        toast.success('📄 Opening merged PDF for viewing', { autoClose: 3000 });
+      } else {
+        throw new Error('Failed to get merged PDF view URL');
+      }
+    } catch (error) {
+      console.error('❌ Error viewing merged PDF:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to view merged PDF';
+      toast.error(`❌ ${errorMessage}`, { autoClose: 5000 });
+    }
+  };
+  
+  const handleDownloadMergedPDF = async (assessmentSessionId) => {
+    try {
+      console.log('⬇️ Downloading merged PDF for session:', assessmentSessionId);
+      
+      // First try to generate/get the merged PDF
+      const generateResponse = await axiosInstance.post(`/api/merged-pdf/generate/${assessmentSessionId}`);
+      
+      if (generateResponse.data.success && generateResponse.data.data.downloadUrl) {
+        // Create a temporary link to trigger download
+        const link = document.createElement('a');
+        link.href = generateResponse.data.data.downloadUrl;
+        link.download = generateResponse.data.data.filename || 'merged_document.pdf';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        toast.success('📥 Merged PDF download started', { autoClose: 3000 });
+      } else {
+        throw new Error('Failed to get merged PDF download URL');
+      }
+    } catch (error) {
+      console.error('❌ Error downloading merged PDF:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to download merged PDF';
+      toast.error(`❌ ${errorMessage}`, { autoClose: 5000 });
     }
   };
 
@@ -1007,6 +1098,7 @@ function CandidateTable() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Experience</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Match %</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">View PDF</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Merged PDF</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Interview</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Details</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Status</th>
@@ -1057,12 +1149,48 @@ function CandidateTable() {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary-gradient rounded-full flex items-center justify-center">
             <span className="text-white font-semibold text-sm">
-              {(resumeData.name || "N")[0].toUpperCase()}
+              {(resumeData.name || email || "N")[0].toUpperCase()}
             </span>
           </div>
           <div>
-            <div className="text-sm font-semibold text-gray-900 truncate max-w-[120px] md:max-w-none">{resumeData.name || "N/A"}</div>
-            <div className="text-xs text-gray-500 truncate max-w-[120px] md:max-w-none">{resumeData.email}</div>
+            <div className="text-sm font-semibold text-gray-900 truncate max-w-[120px] md:max-w-none">
+              {(() => {
+                // Enhanced name parsing logic - consistent with DocumentUploadPage
+                let displayName = "Unknown Candidate";
+                
+                // Priority: 1. Check if resumeData.name exists and is not an email
+                if (resumeData.name && typeof resumeData.name === 'string' && resumeData.name.trim()) {
+                  // If name is not an email format
+                  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(resumeData.name.trim())) {
+                    displayName = resumeData.name.trim();
+                  } else {
+                    // If name field contains email, parse it for display
+                    const emailParts = resumeData.name.split('@')[0].replace(/[._-]/g, ' ');
+                    const prettyName = emailParts
+                      .split(' ')
+                      .filter(Boolean)
+                      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                      .join(' ')
+                      .trim();
+                    displayName = prettyName || 'Candidate';
+                  }
+                }
+                // Priority: 2. If no proper name found, use email for parsing
+                else if (email && typeof email === 'string' && email.includes('@')) {
+                  const emailParts = email.split('@')[0].replace(/[._-]/g, ' ');
+                  const prettyName = emailParts
+                    .split(' ')
+                    .filter(Boolean)
+                    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                    .join(' ')
+                    .trim();
+                  displayName = prettyName || 'Candidate';
+                }
+                
+                return displayName;
+              })()}
+            </div>
+            <div className="text-xs text-gray-500 truncate max-w-[120px] md:max-w-none">{email}</div>
           </div>
         </div>
       </td>
@@ -1179,6 +1307,121 @@ function CandidateTable() {
         </div>
       </td>
       <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
+        {/* MERGED PDF COLUMN */}
+        {session && session.status === 'completed' ? (
+          <div className="candidate-table-dropdown" ref={el => mergedPdfDropdownRefs.current[result._id] = el}>
+            <button 
+              className="btn-modern bg-orange-100 hover:bg-orange-200 text-orange-800 border-orange-200 p-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                // Debug log to see what session looks like
+                console.log('🔍 [MERGED PDF DEBUG] Session object:', session);
+                console.log('🔍 [MERGED PDF DEBUG] Session._id:', session?._id);
+                console.log('🔍 [MERGED PDF DEBUG] Result.assessmentSession:', result.assessmentSession);
+                console.log('🔍 [MERGED PDF DEBUG] Full result:', result);
+                setMergedPdfDropdownOpen(prev => ({
+                  ...prev,
+                  [result._id]: !prev[result._id]
+                }));
+              }}
+            >
+              <FontAwesomeIcon icon={faFilePdf} />
+            </button>
+            {mergedPdfDropdownOpen[result._id] && (
+              <div className="candidate-table-dropdown-menu bg-white rounded-md shadow-lg border border-gray-200 z-50">
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    // Try multiple ways to get the session ID
+                    const sessionId = session?._id || session?.id || 
+                                    result.assessmentSession?._id || 
+                                    result.assessmentSession?.id ||
+                                    (typeof result.assessmentSession === 'string' ? result.assessmentSession : null);
+                    
+                    console.log('🔄 [Generate] Extracted Session ID:', sessionId);
+                    console.log('🔄 [Generate] Session:', session);
+                    console.log('🔄 [Generate] Result.assessmentSession:', result.assessmentSession);
+                    
+                    if (sessionId) {
+                      await handleGenerateMergedPDF(sessionId);
+                    } else {
+                      console.error('❌ No session ID found in:', { session, assessmentSession: result.assessmentSession });
+                      toast.error('No assessment session ID found');
+                    }
+                    setMergedPdfDropdownOpen(prev => ({
+                      ...prev,
+                      [result._id]: false
+                    }));
+                  }}
+                >
+                  <FontAwesomeIcon icon={faFilePdf} className="mr-2" />
+                  Generate Merged PDF
+                </button>
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const sessionId = session?._id || session?.id || 
+                                    result.assessmentSession?._id || 
+                                    result.assessmentSession?.id ||
+                                    (typeof result.assessmentSession === 'string' ? result.assessmentSession : null);
+                    
+                    console.log('👁️ [View] Extracted Session ID:', sessionId);
+                    
+                    if (sessionId) {
+                      await handleViewMergedPDF(sessionId);
+                    } else {
+                      console.error('❌ No session ID found');
+                      toast.error('No assessment session ID found');
+                    }
+                    setMergedPdfDropdownOpen(prev => ({
+                      ...prev,
+                      [result._id]: false
+                    }));
+                  }}
+                >
+                  <FontAwesomeIcon icon={faEye} className="mr-2" />
+                  View Merged PDF
+                </button>
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const sessionId = session?._id || session?.id || 
+                                    result.assessmentSession?._id || 
+                                    result.assessmentSession?.id ||
+                                    (typeof result.assessmentSession === 'string' ? result.assessmentSession : null);
+                    
+                    console.log('⬇️ [Download] Extracted Session ID:', sessionId);
+                    
+                    if (sessionId) {
+                      await handleDownloadMergedPDF(sessionId);
+                    } else {
+                      console.error('❌ No session ID found');
+                      toast.error('No assessment session ID found');
+                    }
+                    setMergedPdfDropdownOpen(prev => ({
+                      ...prev,
+                      [result._id]: false
+                    }));
+                  }}
+                >
+                  <FontAwesomeIcon icon={faDownload} className="mr-2" />
+                  Download Merged PDF
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center">
+            <span className="text-xs text-gray-400">
+              {!session ? 'No Assessment' : 'Assessment Pending'}
+            </span>
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
         <div className="flex flex-col gap-2">
           {/* Proceed to Second Round Button */}
           <motion.button
@@ -1187,11 +1430,17 @@ function CandidateTable() {
               e.stopPropagation();
               try {
                 // Navigate to Candidate Details Page for interview workflow
+                console.log('Candidate data for navigation:', {
+                  result: result,
+                  assessmentSession: result.assessmentSession,
+                  resumeData: resumeData
+                });
+                
+                // The correct navigation should use the assessment session ID for both parameters
+                // as the backend expects assessmentSessionId for both
                 if (result.assessmentSession && result.assessmentSession._id) {
                   console.log('Navigating to candidate details:', {
-                    candidateId: result.assessmentSession._id,
-                    assessmentSessionId: result.assessmentSession._id,
-                    candidateData: resumeData
+                    assessmentSessionId: result.assessmentSession._id
                   });
                   navigate(`/dashboard/candidate-details/${result.assessmentSession._id}/${result.assessmentSession._id}`);
                 } else {
@@ -1402,7 +1651,7 @@ function CandidateTable() {
       </td>
       <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
         <div className="flex flex-wrap gap-2">
-          {/* Recording Actions - Animated Section */}
+          {/* Enhanced Video Recordings Section with Modal View */}
           <div className="w-full">
             <motion.button
               className="btn-modern bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white border-blue-200 p-2 flex items-center gap-2 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 w-full justify-center"
@@ -1414,7 +1663,7 @@ function CandidateTable() {
               whileTap={{ scale: 0.98 }}
             >
               <FontAwesomeIcon icon={faVideo} className="text-white" />
-              <span className="text-xs font-medium">View Recordings</span>
+              <span className="text-xs font-medium">Media Center</span>
               <FontAwesomeIcon 
                 icon={recordingsDropdownOpen[result._id] ? faChevronUp : faChevronDown} 
                 className="text-xs transition-transform duration-200"
@@ -1430,186 +1679,229 @@ function CandidateTable() {
                   transition={{ duration: 0.3 }}
                   className="mt-2 recording-section"
                 >
-                  <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="recording-section-header">
-                      <h3>Media Recordings</h3>
-                      <p>View or download candidate recordings</p>
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden">
+                    <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-3">
+                      <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+                        <FontAwesomeIcon icon={faVideo} />
+                        Media Recordings
+                      </h3>
+                      <p className="text-blue-100 text-xs">View or download candidate recordings</p>
                     </div>
                     
-                    <div className="p-2 max-h-80 overflow-y-auto">
+                    <div className="p-3 max-h-80 overflow-y-auto">
+                      {/* Video Recording */}
                       {result.assessmentSession?.recording?.videoPath && (
-                        <div className="recording-item-row">
-                          <div className="recording-item-info">
-                            <div className="recording-item-icon bg-blue-100">
+                        <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg mb-2 border border-blue-200">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                               <FontAwesomeIcon icon={faVideo} className="text-blue-600" />
                             </div>
-                            <div className="recording-item-details">
-                              <div className="recording-item-title">Video Recording</div>
-                              <div className="recording-item-subtitle">Face Camera</div>
+                            <div>
+                              <div className="font-medium text-sm text-gray-900">Face Camera Recording</div>
+                              <div className="text-xs text-gray-500">Assessment video recording</div>
                             </div>
                           </div>
-                          <div className="recording-item-actions">
-                            <button
-                              className="recording-action-btn recording-action-btn-view"
-                              onClick={() => viewVideo('video', result.assessmentSession.recording.videoPath)}
+                          <div className="flex gap-2">
+                            <motion.button
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
+                              onClick={() => {
+                                const videoUrl = `/api/recordings/video/${extractFileKey(result.assessmentSession.recording.videoPath)}`;
+                                window.open(videoUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+                              }}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
                               disabled={mediaOperations.video?.viewing}
-                              title="View Video"
                             >
                               {mediaOperations.video?.viewing ? (
-                                <FontAwesomeIcon icon={faSpinner} spin />
+                                <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                               ) : (
-                                <FontAwesomeIcon icon={faEye} />
+                                <FontAwesomeIcon icon={faEye} className="mr-1" />
                               )}
-                            </button>
-                            <button
-                              className="recording-action-btn recording-action-btn-download"
+                              View
+                            </motion.button>
+                            <motion.button
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
                               onClick={() => downloadVideo('video', result.assessmentSession.recording.videoPath)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
                               disabled={mediaOperations.video?.downloading}
-                              title="Download Video"
                             >
                               {mediaOperations.video?.downloading ? (
-                                <FontAwesomeIcon icon={faSpinner} spin />
+                                <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                               ) : (
-                                <FontAwesomeIcon icon={faDownload} />
+                                <FontAwesomeIcon icon={faDownload} className="mr-1" />
                               )}
-                            </button>
+                              Download
+                            </motion.button>
                           </div>
                         </div>
                       )}
                       
+                      {/* Screen Recording */}
                       {result.assessmentSession?.recording?.screenPath && (
-                        <div className="recording-item-row">
-                          <div className="recording-item-info">
-                            <div className="recording-item-icon bg-purple-100">
+                        <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg mb-2 border border-purple-200">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
                               <FontAwesomeIcon icon={faDesktop} className="text-purple-600" />
                             </div>
-                            <div className="recording-item-details">
-                              <div className="recording-item-title">Screen Recording</div>
-                              <div className="recording-item-subtitle">Screen Share</div>
+                            <div>
+                              <div className="font-medium text-sm text-gray-900">Screen Recording</div>
+                              <div className="text-xs text-gray-500">Screen share recording</div>
                             </div>
                           </div>
-                          <div className="recording-item-actions">
-                            <button
-                              className="recording-action-btn recording-action-btn-view"
-                              onClick={() => viewVideo('screen', result.assessmentSession.recording.screenPath)}
+                          <div className="flex gap-2">
+                            <motion.button
+                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
+                              onClick={() => {
+                                const screenUrl = `/api/recordings/screen/${extractFileKey(result.assessmentSession.recording.screenPath)}`;
+                                window.open(screenUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+                              }}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
                               disabled={mediaOperations.screen?.viewing}
-                              title="View Screen"
                             >
                               {mediaOperations.screen?.viewing ? (
-                                <FontAwesomeIcon icon={faSpinner} spin />
+                                <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                               ) : (
-                                <FontAwesomeIcon icon={faEye} />
+                                <FontAwesomeIcon icon={faEye} className="mr-1" />
                               )}
-                            </button>
-                            <button
-                              className="recording-action-btn recording-action-btn-download"
+                              View
+                            </motion.button>
+                            <motion.button
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
                               onClick={() => downloadVideo('screen', result.assessmentSession.recording.screenPath)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
                               disabled={mediaOperations.screen?.downloading}
-                              title="Download Screen"
                             >
                               {mediaOperations.screen?.downloading ? (
-                                <FontAwesomeIcon icon={faSpinner} spin />
+                                <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                               ) : (
-                                <FontAwesomeIcon icon={faDownload} />
+                                <FontAwesomeIcon icon={faDownload} className="mr-1" />
                               )}
-                            </button>
+                              Download
+                            </motion.button>
                           </div>
                         </div>
                       )}
                       
+                      {/* Audio Recording */}
                       {result.assessmentSession?.recording?.audioPath && (
-                        <div className="recording-item-row">
-                          <div className="recording-item-info">
-                            <div className="recording-item-icon bg-green-100">
+                        <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg mb-2 border border-green-200">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                               <FontAwesomeIcon icon={faMicrophone} className="text-green-600" />
                             </div>
-                            <div className="recording-item-details">
-                              <div className="recording-item-title">Audio Recording</div>
-                              <div className="recording-item-subtitle">Voice Recording</div>
+                            <div>
+                              <div className="font-medium text-sm text-gray-900">Audio Recording</div>
+                              <div className="text-xs text-gray-500">Voice recording</div>
                             </div>
                           </div>
-                          <div className="recording-item-actions">
-                            <button
-                              className="recording-action-btn recording-action-btn-view"
+                          <div className="flex gap-2">
+                            <motion.button
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
                               onClick={() => viewAudio(result.assessmentSession.recording.audioPath, 0)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
                               disabled={mediaOperations.audio?.[0]?.viewing}
-                              title="View Audio"
                             >
                               {mediaOperations.audio?.[0]?.viewing ? (
-                                <FontAwesomeIcon icon={faSpinner} spin />
+                                <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                               ) : (
-                                <FontAwesomeIcon icon={faPlayCircle} />
+                                <FontAwesomeIcon icon={faPlayCircle} className="mr-1" />
                               )}
-                            </button>
-                            <button
-                              className="recording-action-btn recording-action-btn-download"
+                              Play
+                            </motion.button>
+                            <motion.button
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
                               onClick={() => downloadAudio(result.assessmentSession.recording.audioPath, 0)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
                               disabled={mediaOperations.audio?.[0]?.downloading}
-                              title="Download Audio"
                             >
                               {mediaOperations.audio?.[0]?.downloading ? (
-                                <FontAwesomeIcon icon={faSpinner} spin />
+                                <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                               ) : (
-                                <FontAwesomeIcon icon={faDownload} />
+                                <FontAwesomeIcon icon={faDownload} className="mr-1" />
                               )}
-                            </button>
+                              Download
+                            </motion.button>
                           </div>
                         </div>
                       )}
                       
+                      {/* No recordings message */}
                       {!result.assessmentSession?.recording?.videoPath && 
                        !result.assessmentSession?.recording?.screenPath && 
                        !result.assessmentSession?.recording?.audioPath && (
-                        <div className="no-recordings-message">
-                          <FontAwesomeIcon icon={faVideo} className="no-recordings-icon" />
-                          <p>No video or audio recordings available</p>
+                        <div className="text-center py-8">
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <FontAwesomeIcon icon={faVideo} className="text-gray-400 text-xl" />
+                          </div>
+                          <p className="text-gray-500 text-sm font-medium">No recordings available</p>
+                          <p className="text-gray-400 text-xs">Assessment recordings will appear here</p>
                         </div>
                       )}
                     </div>
                   </div>
                   
-                  {/* Voice Answers Section */}
+                  {/* Enhanced Voice Answers Section */}
                   {result.assessmentSession?.voiceAnswers && result.assessmentSession.voiceAnswers.length > 0 && (
-                    <div className="voice-answers-section">
-                      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                        <div className="voice-answers-header">
-                          <h3>Voice Answers</h3>
-                          <p>{result.assessmentSession.voiceAnswers.length} recorded responses</p>
+                    <div className="mt-3">
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-500 to-teal-600 p-3">
+                          <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+                            <FontAwesomeIcon icon={faMicrophone} />
+                            Voice Answers
+                          </h3>
+                          <p className="text-green-100 text-xs">{result.assessmentSession.voiceAnswers.length} recorded responses</p>
                         </div>
                         
-                        <div className="p-2 max-h-80 overflow-y-auto">
+                        <div className="p-3 max-h-80 overflow-y-auto">
                           {result.assessmentSession.voiceAnswers.map((answer, index) => (
                             answer.audioPath && (
-                              <div key={index} className="voice-answer-item">
-                                <div className="voice-answer-info">
-                                  <div className="voice-answer-title truncate">Q{index + 1}: {answer.question?.substring(0, 40) || 'Audio Answer'}{answer.question && answer.question.length > 40 ? '...' : ''}</div>
-                                  <div className="voice-answer-subtitle truncate">Click to play or download</div>
+                              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2 border border-gray-200">
+                                <div className="flex items-center gap-3 flex-1">
+                                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <span className="text-green-600 font-semibold text-xs">Q{index + 1}</span>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-sm text-gray-900 truncate">
+                                      {answer.question?.substring(0, 50) || `Voice Answer ${index + 1}`}
+                                      {answer.question && answer.question.length > 50 ? '...' : ''}
+                                    </div>
+                                    <div className="text-xs text-gray-500">Click to play or download</div>
+                                  </div>
                                 </div>
-                                <div className="voice-answer-actions">
-                                  <button
-                                    className="recording-action-btn recording-action-btn-view"
+                                <div className="flex gap-2 flex-shrink-0">
+                                  <motion.button
+                                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
                                     onClick={() => viewAudio(answer.audioPath, index)}
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
                                     disabled={mediaOperations.audio?.[index]?.viewing}
-                                    title={`Play Answer ${index + 1}`}
                                   >
                                     {mediaOperations.audio?.[index]?.viewing ? (
-                                      <FontAwesomeIcon icon={faSpinner} spin />
+                                      <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                                     ) : (
-                                      <FontAwesomeIcon icon={faPlayCircle} />
+                                      <FontAwesomeIcon icon={faPlayCircle} className="mr-1" />
                                     )}
-                                  </button>
-                                  <button
-                                    className="recording-action-btn recording-action-btn-download"
+                                    Play
+                                  </motion.button>
+                                  <motion.button
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors duration-200"
                                     onClick={() => downloadAudio(answer.audioPath, index)}
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
                                     disabled={mediaOperations.audio?.[index]?.downloading}
-                                    title={`Download Answer ${index + 1}`}
                                   >
                                     {mediaOperations.audio?.[index]?.downloading ? (
-                                      <FontAwesomeIcon icon={faSpinner} spin />
+                                      <FontAwesomeIcon icon={faSpinner} spin className="mr-1" />
                                     ) : (
-                                      <FontAwesomeIcon icon={faDownload} />
+                                      <FontAwesomeIcon icon={faDownload} className="mr-1" />
                                     )}
-                                  </button>
+                                    Download
+                                  </motion.button>
                                 </div>
                               </div>
                             )

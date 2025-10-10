@@ -20,6 +20,7 @@ import { Dialog } from "../ui/Dialog";
 import { axiosInstance } from "../../axiosUtils";
 import { useMediaOperations } from "../../hooks/useMediaOperations";
 import TopNotificationModal from "./TopNotificationModal";
+import { debouncedToast } from "../../utils/toastUtils";
 
 
 function ResponseTable({ data, duplicateCount }) {
@@ -35,6 +36,11 @@ function ResponseTable({ data, duplicateCount }) {
   });
   const [showModal, setShowModal] = useState({});
   const [allSelected, setAllSelected] = useState({});
+  
+  // 🔥 NEW: Bulk selection state for candidate resumes
+  const [selectedCandidates, setSelectedCandidates] = useState(new Set());
+  const [isAllCandidatesSelected, setIsAllCandidatesSelected] = useState(false);
+  const [bulkDownloadInProgress, setBulkDownloadInProgress] = useState(false);
 
   // Use the shared media operations hook
   const { mediaOperations, viewAudio, downloadAudio, viewVideo, downloadVideo, extractFileKey } = useMediaOperations();
@@ -211,6 +217,9 @@ function ResponseTable({ data, duplicateCount }) {
     });
     setAllSelected({});
     setFilteredMembers(members);
+    // Clear bulk selection when filters change
+    setSelectedCandidates(new Set());
+    setIsAllCandidatesSelected(false);
   };
 
   const toggleExpand = (index, type) => {
@@ -278,6 +287,133 @@ function ResponseTable({ data, duplicateCount }) {
   const toggleExpandRow = (id) => {
     setExpandedRow(expandedRow === id ? null : id);
   };
+
+  // 🔥 NEW: Bulk selection handlers
+  const handleCandidateSelection = (candidateIndex, isSelected) => {
+    const newSelected = new Set(selectedCandidates);
+    if (isSelected) {
+      newSelected.add(candidateIndex);
+    } else {
+      newSelected.delete(candidateIndex);
+    }
+    setSelectedCandidates(newSelected);
+    
+    // Update "Select All" state
+    setIsAllCandidatesSelected(newSelected.size === filteredMembers.length && filteredMembers.length > 0);
+  };
+
+  const handleSelectAllCandidates = (isSelected) => {
+    if (isSelected) {
+      const allIndices = new Set(filteredMembers.map((_, index) => index));
+      setSelectedCandidates(allIndices);
+      setIsAllCandidatesSelected(true);
+    } else {
+      setSelectedCandidates(new Set());
+      setIsAllCandidatesSelected(false);
+    }
+  };
+
+  const clearAllSelections = () => {
+    setSelectedCandidates(new Set());
+    setIsAllCandidatesSelected(false);
+  };
+
+  // 🔥 NEW: Bulk download functionality
+  const handleBulkResumeDownload = async () => {
+    if (selectedCandidates.size === 0) {
+      debouncedToast.warning('⚠️ Please select candidates to download resumes', 'bulk-download-warning');
+      return;
+    }
+
+    setBulkDownloadInProgress(true);
+    const loadingToast = debouncedToast.loading(`📦 Preparing to download ${selectedCandidates.size} resumes...`);
+    
+    try {
+      console.log('🔥 [BULK DOWNLOAD] Starting bulk resume download:', {
+        selectedCount: selectedCandidates.size,
+        timestamp: new Date().toISOString()
+      });
+
+      const selectedCandidateData = Array.from(selectedCandidates).map(index => {
+        const candidate = filteredMembers[index];
+        return {
+          index,
+          name: candidate.matchingResult?.name || candidate.name || `Candidate_${index + 1}`,
+          email: candidate.matchingResult?.email || candidate.email,
+          resumeId: candidate.resumeId?._id || candidate.resumeId || candidate.Id || candidate._id,
+          matchingPercentage: candidate.matchingPercentage || 0
+        };
+      });
+
+      console.log('📊 [BULK DOWNLOAD] Selected candidates:', selectedCandidateData);
+
+      // Collect resume IDs for bulk download
+      const resumeIds = selectedCandidateData
+        .map(candidate => candidate.resumeId)
+        .filter(Boolean);
+
+      if (resumeIds.length === 0) {
+        throw new Error('No valid resume IDs found for selected candidates');
+      }
+
+      console.log('📋 [BULK DOWNLOAD] Resume IDs to download:', resumeIds);
+
+      // Call backend bulk download endpoint
+      const response = await axiosInstance.post('/api/resumes/bulk-download', {
+        resumeIds: resumeIds,
+        candidates: selectedCandidateData
+      });
+
+      debouncedToast.dismiss(loadingToast);
+
+      if (response.data.success) {
+        const { downloadUrl, summary } = response.data;
+        
+        // Start the bulk download
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = `bulk_resumes_${new Date().toISOString().split('T')[0]}.zip`;
+        downloadLink.style.display = 'none';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        debouncedToast.success(
+          `📥 Downloaded ${summary.successful}/${summary.total} resumes successfully!`,
+          'bulk-download-success'
+        );
+
+        console.log('✅ [BULK DOWNLOAD] Bulk download completed:', summary);
+        
+        // Clear selections after successful download
+        clearAllSelections();
+      } else {
+        throw new Error(response.data.error || 'Bulk download failed');
+      }
+    } catch (error) {
+      debouncedToast.dismiss(loadingToast);
+      console.error('❌ [BULK DOWNLOAD] Error:', error);
+      
+      let errorMessage = 'Failed to download resumes';
+      if (error.message.includes('No valid resume IDs')) {
+        errorMessage = 'No valid resumes found for selected candidates';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Some resumes are no longer available';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Access denied to download resumes';
+      }
+      
+      debouncedToast.error(`❌ ${errorMessage}`, 'bulk-download-error');
+    } finally {
+      setBulkDownloadInProgress(false);
+    }
+  };
+
+  // Update filtered members effect to clear selections
+  useEffect(() => {
+    setSelectedCandidates(new Set());
+    setIsAllCandidatesSelected(false);
+  }, [filteredMembers]);
 
   // Handle click outside to close dropdowns
   useEffect(() => {
@@ -719,10 +855,113 @@ function ResponseTable({ data, duplicateCount }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
         >
+          {/* 🔥 NEW: Bulk Action Panel */}
+          <AnimatePresence>
+            {selectedCandidates.size > 0 && (
+              <motion.div
+                className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 border-b"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {selectedCandidates.size} candidate{selectedCandidates.size !== 1 ? 's' : ''} selected
+                      </span>
+                      <div className="w-px h-4 bg-white/30"></div>
+                      <span className="text-xs opacity-90">
+                        Ready for bulk download
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <motion.button
+                      onClick={handleBulkResumeDownload}
+                      disabled={bulkDownloadInProgress}
+                      className="bg-white text-blue-600 px-4 py-2 rounded-lg font-medium text-sm hover:bg-blue-50 transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {bulkDownloadInProgress ? (
+                        <>
+                          <FontAwesomeIcon icon={faSpinner} spin className="w-4 h-4" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <FontAwesomeIcon icon={faDownload} className="w-4 h-4" />
+                          Download {selectedCandidates.size} Resume{selectedCandidates.size !== 1 ? 's' : ''}
+                        </>
+                      )}
+                    </motion.button>
+                    <motion.button
+                      onClick={clearAllSelections}
+                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg transition-all duration-200 flex items-center gap-2"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      title="Clear all selections"
+                    >
+                      <FontAwesomeIcon icon={faTimes} className="w-4 h-4" />
+                      Clear
+                    </motion.button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className="overflow-x-auto rounded-lg shadow-lg">
             <table className="w-full min-w-max">
               <thead className="bg-primary-gradient sticky top-0">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm w-12">
+                    {/* 🔥 NEW: Select All checkbox */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 bg-white"
+                        checked={isAllCandidatesSelected}
+                        onChange={(e) => handleSelectAllCandidates(e.target.checked)}
+                        title="Select all candidates"
+                        aria-label="Select all candidates for bulk download"
+                      />
+                      {selectedCandidates.size > 0 && (
+                        <motion.div
+                          className="flex items-center gap-2 ml-2"
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                        >
+                          <span className="text-xs font-medium text-white bg-white/20 px-2 py-1 rounded">
+                            {selectedCandidates.size}
+                          </span>
+                          <button
+                            onClick={handleBulkResumeDownload}
+                            disabled={bulkDownloadInProgress}
+                            className="text-white hover:text-yellow-200 transition-colors duration-200 disabled:opacity-50"
+                            title={`Download ${selectedCandidates.size} resumes`}
+                            aria-label={`Download ${selectedCandidates.size} selected resumes`}
+                          >
+                            {bulkDownloadInProgress ? (
+                              <FontAwesomeIcon icon={faSpinner} spin className="h-4 w-4" />
+                            ) : (
+                              <FontAwesomeIcon icon={faDownload} className="h-4 w-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={clearAllSelections}
+                            className="text-white hover:text-red-200 transition-colors duration-200"
+                            title="Clear all selections"
+                            aria-label="Clear all selections"
+                          >
+                            <FontAwesomeIcon icon={faTimes} className="h-3 w-3" />
+                          </button>
+                        </motion.div>
+                      )}
+                    </div>
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Rank</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Candidate</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Job Title</th>
@@ -740,12 +979,29 @@ function ResponseTable({ data, duplicateCount }) {
                   return (
                     <React.Fragment key={index}>
                       <motion.tr 
-                        className={`hover:bg-gray-50 transition-all duration-200 ${expandedRow === index ? "bg-blue-50" : ""}`}
+                        className={`hover:bg-gray-50 transition-all duration-200 ${
+                          expandedRow === index ? "bg-blue-50" : ""
+                        } ${
+                          selectedCandidates.has(index) ? "bg-blue-50 border-l-4 border-blue-500 shadow-sm" : ""
+                        }`}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: index * 0.05 }}
                         whileHover={{ y: -1 }}
                       >
+                        <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
+                          {/* 🔥 NEW: Individual selection checkbox */}
+                          <div className="flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                              checked={selectedCandidates.has(index)}
+                              onChange={(e) => handleCandidateSelection(index, e.target.checked)}
+                              title={`Select ${resumeData.name || 'candidate'} for bulk download`}
+                              aria-label={`Select ${resumeData.name || 'candidate'} for bulk download`}
+                            />
+                          </div>
+                        </td>
                         <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary-100 text-primary-800 font-semibold text-sm">
@@ -986,7 +1242,7 @@ function ResponseTable({ data, duplicateCount }) {
     exit={{ opacity: 0, height: 0 }}
     transition={{ duration: 0.3 }}
   >
-    <td colSpan="6" className="px-0 py-0">
+    <td colSpan="7" className="px-0 py-0">
       <motion.div 
         className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2 rounded-lg border border-blue-100"
         initial={{ y: -20 }}
@@ -1275,6 +1531,72 @@ function ResponseTable({ data, duplicateCount }) {
             </table>
           </div>
         </motion.div>
+        
+        {/* 🔥 NEW: Floating Action Button for Bulk Download */}
+        <AnimatePresence>
+          {selectedCandidates.size > 0 && (
+            <motion.div
+              className="fixed bottom-6 right-6 z-50"
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            >
+              <div className="bg-white rounded-lg shadow-2xl border border-gray-200 p-4 min-w-[280px]">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-blue-gradient rounded-full flex items-center justify-center">
+                      <FontAwesomeIcon icon={faDownload} className="text-white text-sm" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 text-sm">
+                        Bulk Download Ready
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        {selectedCandidates.size} candidates selected
+                      </p>
+                    </div>
+                  </div>
+                  <motion.button
+                    onClick={clearAllSelections}
+                    className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <FontAwesomeIcon icon={faTimes} className="w-4 h-4" />
+                  </motion.button>
+                </div>
+                
+                <div className="space-y-2">
+                  <motion.button
+                    onClick={handleBulkResumeDownload}
+                    disabled={bulkDownloadInProgress}
+                    className="w-full bg-blue-gradient text-white py-2.5 px-4 rounded-lg font-medium text-sm hover:shadow-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {bulkDownloadInProgress ? (
+                      <>
+                        <FontAwesomeIcon icon={faSpinner} spin className="w-4 h-4" />
+                        Creating ZIP...
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faDownload} className="w-4 h-4" />
+                        Download ZIP File
+                      </>
+                    )}
+                  </motion.button>
+                  
+                  <div className="text-xs text-gray-500 text-center">
+                    Download will include candidate names and matching scores
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
         <ToastContainer position="top-center" />
       </motion.div>
     </div>

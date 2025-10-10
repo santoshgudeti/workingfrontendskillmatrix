@@ -21,7 +21,7 @@
     "@tiptap/react": "^2.26.2",
     "@tiptap/starter-kit": "^2.5.9",
     "axios": "^1.7.9",
-    "caniuse-lite": "^1.0.30001743",
+    "caniuse-lite": "^1.0.30001749",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fortawesome": "^0.0.1-security",
