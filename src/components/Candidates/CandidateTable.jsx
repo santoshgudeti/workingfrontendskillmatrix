@@ -110,6 +110,11 @@ function CandidateTable() {
   const [voiceAnswersDropdownOpen, setVoiceAnswersDropdownOpen] = useState({});
   const [mergedPdfDropdownOpen, setMergedPdfDropdownOpen] = useState({});
   
+  // 🔥 NEW: Bulk selection state for merged documents
+  const [selectedMergedDocs, setSelectedMergedDocs] = useState(new Set());
+  const [isAllMergedDocsSelected, setIsAllMergedDocsSelected] = useState(false);
+  const [bulkDownloadInProgress, setBulkDownloadInProgress] = useState(false);
+  
   // Refs for dropdown containers
   const resumeDropdownRefs = useRef({});
   const interviewDropdownRefs = useRef({});
@@ -688,13 +693,12 @@ function CandidateTable() {
       console.log('⬇️ Downloading merged PDF for session:', assessmentSessionId);
       
       // First try to generate/get the merged PDF
-      const generateResponse = await axiosInstance.post(`/api/merged-pdf/generate/${assessmentSessionId}`);
+      const generateResponse = await axiosInstance.post(`/api/merged-pdf/generate/${assessmentSessionId}?download=true`);
       
       if (generateResponse.data.success && generateResponse.data.data.downloadUrl) {
         // Create a temporary link to trigger download
         const link = document.createElement('a');
         link.href = generateResponse.data.data.downloadUrl;
-        link.download = generateResponse.data.data.filename || 'merged_document.pdf';
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
@@ -710,7 +714,125 @@ function CandidateTable() {
       toast.error(`❌ ${errorMessage}`, { autoClose: 5000 });
     }
   };
+  
+  // 🔥 NEW: Bulk download handler for merged documents
+  const handleBulkMergedDocsDownload = async () => {
+    if (selectedMergedDocs.size === 0) {
+      toast.warning('⚠️ Please select merged documents to download', { toastId: 'bulk-merged-download-warning' });
+      return;
+    }
+    
+    setBulkDownloadInProgress(true);
+    const loadingToast = toast.loading(`📦 Preparing to download ${selectedMergedDocs.size} merged documents...`);
+    
+    try {
+      console.log('🔥 [BULK MERGED DOWNLOAD] Starting bulk merged documents download:', {
+        selectedCount: selectedMergedDocs.size,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Convert Set to Array and extract assessment session IDs
+      // FIX: Use the actual candidate IDs instead of array indexes
+      const selectedAssessmentSessionIds = Array.from(selectedMergedDocs).map(candidateId => {
+        // Find the candidate in filteredMembers by ID
+        const candidate = filteredMembers.find(member => member._id === candidateId);
+        const session = candidate?.assessmentSession;
+        
+        // Get the assessment session ID
+        return session?._id || null;
+      }).filter(id => id !== null); // Filter out any null IDs
+      
+      if (selectedAssessmentSessionIds.length === 0) {
+        throw new Error('No valid assessment sessions found for download');
+      }
+      
+      console.log('📋 [BULK MERGED DOWNLOAD] Valid sessions for download:', {
+        totalCount: selectedMergedDocs.size,
+        validCount: selectedAssessmentSessionIds.length,
+        invalidCount: selectedMergedDocs.size - selectedAssessmentSessionIds.length,
+        assessmentSessionIds: selectedAssessmentSessionIds
+      });
+      
+      // Call backend bulk download endpoint with assessment session IDs
+      const response = await axiosInstance.post('/api/merged-pdf/bulk-download', {
+        assessmentSessionIds: selectedAssessmentSessionIds
+      });
+      
+      if (response.data.success && response.data.downloadUrl) {
+        // Update loading toast
+        toast.update(loadingToast, {
+          render: `✅ Processing ${selectedAssessmentSessionIds.length} merged documents...`,
+          type: 'success',
+          isLoading: false,
+          autoClose: 3000
+        });
+        
+        // Start the bulk download
+        const link = document.createElement('a');
+        link.href = response.data.downloadUrl;
+        link.download = `bulk_merged_documents_${new Date().toISOString().split('T')[0]}.zip`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Show success message
+        toast.success(
+          `🎉 Successfully downloaded ${selectedAssessmentSessionIds.length} merged document${selectedAssessmentSessionIds.length !== 1 ? 's' : ''}!`, 
+          { toastId: 'bulk-merged-download-success' }
+        );
+        
+        // Clear selection
+        setSelectedMergedDocs(new Set());
+        setIsAllMergedDocsSelected(false);
+      } else {
+        throw new Error(response.data.error || 'Failed to generate bulk download');
+      }
+      
+    } catch (error) {
+      console.error('❌ [BULK MERGED DOWNLOAD] Error:', error);
+      toast.update(loadingToast, {
+        render: '❌ Bulk download failed',
+        type: 'error',
+        isLoading: false,
+        autoClose: 5000
+      });
+      
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to download merged documents';
+      toast.error(`❌ ${errorMessage}`, { toastId: 'bulk-merged-download-error' });
+    } finally {
+      setBulkDownloadInProgress(false);
+    }
+  };
 
+  // 🔥 NEW: Bulk selection handlers for merged documents
+  // FIX: Store candidate IDs instead of array indexes
+  const toggleMergedDocSelection = (candidateId) => {
+    const newSelected = new Set(selectedMergedDocs);
+    if (newSelected.has(candidateId)) {
+      newSelected.delete(candidateId);
+    } else {
+      newSelected.add(candidateId);
+    }
+    setSelectedMergedDocs(newSelected);
+    
+    // Update "select all" state based on the sorted array being displayed
+    setIsAllMergedDocsSelected(newSelected.size === sortedCandidatesToDisplay.length && sortedCandidatesToDisplay.length > 0);
+  };
+  
+  const toggleSelectAllMergedDocs = () => {
+    if (isAllMergedDocsSelected) {
+      setSelectedMergedDocs(new Set());
+    } else {
+      // FIX: Store candidate IDs from the sorted array being displayed
+      const allCandidateIds = new Set();
+      sortedCandidatesToDisplay.forEach((candidate) => allCandidateIds.add(candidate._id));
+      setSelectedMergedDocs(allCandidateIds);
+    }
+    setIsAllMergedDocsSelected(!isAllMergedDocsSelected);
+  };
+  
+  // Also fix the "select all" checkbox state to use the sorted array
   const calculateTotalExperience = (experiences) => {
     if (!experiences || !Array.isArray(experiences)) return "0 years";
     return experiences.reduce((total, exp) => {
@@ -916,6 +1038,69 @@ function CandidateTable() {
             </motion.button>
           </div>
         </motion.div>
+        
+        {/* 🔥 NEW: Bulk Actions Panel for Merged Documents */}
+        <AnimatePresence>
+          {selectedMergedDocs.size > 0 && (
+            <motion.div 
+              className="card-glass mb-6 relative overflow-hidden"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <FontAwesomeIcon icon={faFilePdf} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">
+                      {selectedMergedDocs.size} merged document{selectedMergedDocs.size !== 1 ? 's' : ''} selected
+                    </h3>
+                    <p className="text-sm text-gray-600">Ready for bulk download</p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 w-full sm:w-auto">
+                  <motion.button
+                    className="btn-modern bg-gray-100 hover:bg-gray-200 text-gray-700 flex-1 sm:flex-none"
+                    onClick={() => {
+                      setSelectedMergedDocs(new Set());
+                      setIsAllMergedDocsSelected(false);
+                    }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    disabled={bulkDownloadInProgress}
+                  >
+                    <FontAwesomeIcon icon={faTimes} />
+                    <span>Clear</span>
+                  </motion.button>
+                  
+                  <motion.button
+                    className="btn-primary flex items-center gap-2 flex-1 sm:flex-none"
+                    onClick={handleBulkMergedDocsDownload}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    disabled={bulkDownloadInProgress}
+                  >
+                    {bulkDownloadInProgress ? (
+                      <>
+                        <FontAwesomeIcon icon={faSpinner} spin />
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faDownload} />
+                        <span>Download {selectedMergedDocs.size} Merged Document{selectedMergedDocs.size !== 1 ? 's' : ''}</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
           {/* Filter Modals */}
           <AnimatePresence>
             {Object.keys(filterIcons).map((filter) => (
@@ -1092,6 +1277,16 @@ function CandidateTable() {
               <table className="w-full min-w-max">
                 <thead className="bg-primary-gradient sticky top-0">
                   <tr>
+                    {/* Checkbox column for bulk selection */}
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm w-12">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                        checked={isAllMergedDocsSelected}
+                        onChange={toggleSelectAllMergedDocs}
+                        aria-label="Select all candidates for bulk download"
+                      />
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Rank</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Candidate</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider md:px-6 md:py-4 md:text-sm">Job Title</th>
@@ -1133,6 +1328,18 @@ function CandidateTable() {
       transition={{ duration: 0.3, delay: index * 0.05 }}
       whileHover={{ y: -1 }}
     >
+      {/* Checkbox for bulk selection */}
+      {/* FIX: Use candidate ID instead of array index */}
+      <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4 w-12">
+        <input
+          type="checkbox"
+          className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+          checked={selectedMergedDocs.has(result._id)}
+          onChange={() => toggleMergedDocSelection(result._id)}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select candidate ${index + 1} for bulk download`}
+        />
+      </td>
       <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
         <div className="flex items-center gap-2">
           {isRecent && viewMode !== 'recent' && (
@@ -2200,8 +2407,75 @@ function CandidateTable() {
             </div>
           </motion.div>
         </motion.div>
+        
+        {/* 🔥 NEW: Floating Action Button for Bulk Merged Document Download */}
+        <AnimatePresence>
+          {selectedMergedDocs.size > 0 && (
+            <motion.div
+              className="fixed bottom-6 right-6 z-50"
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            >
+              <div className="bg-white rounded-lg shadow-2xl border border-gray-200 p-4 min-w-[280px]">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-orange-gradient rounded-full flex items-center justify-center">
+                      <FontAwesomeIcon icon={faFilePdf} className="text-white text-sm" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 text-sm">
+                        Bulk Download Ready
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        {selectedMergedDocs.size} merged document{selectedMergedDocs.size !== 1 ? 's' : ''} selected
+                      </p>
+                    </div>
+                  </div>
+                  <motion.button
+                    onClick={() => {
+                      setSelectedMergedDocs(new Set());
+                      setIsAllMergedDocsSelected(false);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <FontAwesomeIcon icon={faTimes} className="w-4 h-4" />
+                  </motion.button>
+                </div>
+                
+                <div className="space-y-2">
+                  <motion.button
+                    onClick={handleBulkMergedDocsDownload}
+                    disabled={bulkDownloadInProgress}
+                    className="w-full bg-orange-gradient text-white py-2.5 px-4 rounded-lg font-medium text-sm hover:shadow-lg transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {bulkDownloadInProgress ? (
+                      <>
+                        <FontAwesomeIcon icon={faSpinner} spin className="w-4 h-4" />
+                        Creating ZIP...
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faDownload} className="w-4 h-4" />
+                        Download ZIP File
+                      </>
+                    )}
+                  </motion.button>
+                  
+                  <div className="text-xs text-gray-500 text-center">
+                    Download will include candidate merged documents
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-  
   );
 }
 
