@@ -26,7 +26,7 @@ import { axiosInstance } from "../../axiosUtils";
 function UploadDocuments({ setResponseData }) {
   const navigate = useNavigate();
   const [resumeFiles, setResumeFiles] = useState([]);
-  const [jobDescFile, setJobDescFile] = useState(null);
+  const [jobDescFiles, setJobDescFiles] = useState([]); 
   const [jobDescTitle, setJobDescTitle] = useState("");
   const [savedJDs, setSavedJDs] = useState([]);
   const [selectedJD, setSelectedJD] = useState(null);
@@ -93,7 +93,8 @@ function UploadDocuments({ setResponseData }) {
           type: 'application/pdf'
         });
         
-        setJobDescFile(file);
+        // For single JD selection, we'll use the first position in the array
+        setJobDescFiles([file]);
         setJobDescTitle(selectedJD.title || selectedJD.filename);
       } catch (error) {
         toast.error('Failed to load JD content');
@@ -207,15 +208,18 @@ function UploadDocuments({ setResponseData }) {
         toast.error("Some files exceed the size limit of 25MB and were not added.");
       }
       setResumeFiles((prevFiles) => [...prevFiles, ...validFiles]);
-    } else {
-      const file = files[0];
-      if (file.size > 25 * 1024 * 1024) {
-        toast.error("File size should be less than 25MB");
-        return;
+    } else if (activeModal === "jobDesc") {
+      const validFiles = files.filter(
+        (file) => file.size <= 25 * 1024 * 1024
+      );
+      if (validFiles.length !== files.length) {
+        toast.error("Some files exceed the size limit of 25MB and were not added.");
       }
-      setJobDescFile(file);
-      setJobDescTitle(file.name.replace('.pdf', ''));
-      setSelectedJD(null); // Clear selected JD when uploading new file
+      setJobDescFiles((prevFiles) => [...prevFiles, ...validFiles]);
+      if (validFiles.length > 0 && !jobDescTitle) {
+        setJobDescTitle(validFiles[0].name.replace('.pdf', ''));
+      }
+      setSelectedJD(null); // Clear selected JD when uploading new files
     }
     setActiveModal(null);
   };
@@ -223,10 +227,16 @@ function UploadDocuments({ setResponseData }) {
   const removeFile = (type, index) => {
     if (type === "resume") {
       setResumeFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
-    } else {
-      setJobDescFile(null);
-      setJobDescTitle("");
-      setSelectedJD(null);
+    } else if (type === "jobDesc") {
+      setJobDescFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+      // If we remove the first file and there are others, update the title
+      if (index === 0 && jobDescFiles.length > 1) {
+        setJobDescTitle(jobDescFiles[1].name.replace('.pdf', ''));
+      } else if (jobDescFiles.length <= 1) {
+        // If removing the last file, clear title
+        setJobDescTitle("");
+        setSelectedJD(null);
+      }
     }
   };
 
@@ -265,7 +275,7 @@ const handleDeleteJD = async () => {
       
       setSavedJDs(prev => prev.filter(jd => jd._id !== jdToDelete._id));
       if (selectedJD && selectedJD._id === jdToDelete._id) {
-        setJobDescFile(null);
+        setJobDescFiles([]);
         setJobDescTitle("");
         setSelectedJD(null);
       }
@@ -352,7 +362,7 @@ const handleDeleteJD = async () => {
               type="file"
               className="hidden"
               accept=".pdf"
-              multiple={activeModal === "resume"}
+              multiple={activeModal === "resume" || activeModal === "jobDesc"}
               onChange={(e) => {
                 if (e.target.files.length) {
                   handleFileUpload(Array.from(e.target.files));
@@ -362,7 +372,7 @@ const handleDeleteJD = async () => {
             />
           </motion.label>
           <div id="file-help" className="sr-only">
-            Upload PDF files up to 25MB each. You can select multiple files at once for resumes.
+            Upload PDF files up to 25MB each. You can select multiple files at once for resumes or job descriptions.
           </div>
         </div>
 
@@ -512,7 +522,7 @@ const handleDeleteJD = async () => {
     </div>
   );
 
-const UploadSection = ({ title, files, file, type, icon }) => {
+const UploadSection = ({ title, files, type, icon }) => {
   const titleInputRef = useRef(null);
 
   useEffect(() => {
@@ -602,7 +612,7 @@ const UploadSection = ({ title, files, file, type, icon }) => {
             </motion.button>
           </div>
         </div>
-      ) : !file ? (
+      ) : type === "jobDesc" && files.length === 0 ? (
         <div 
           className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer transition-all duration-300 hover:border-primary-400 hover:bg-primary-25 group"
           onClick={() => setActiveModal(type)}
@@ -619,90 +629,106 @@ const UploadSection = ({ title, files, file, type, icon }) => {
               whileTap={{ scale: 0.95 }}
             >
               <FontAwesomeIcon icon={faPlus} />
-              Upload Job Description
+              Upload Job Descriptions
             </motion.button>
           </div>
           <p className="text-sm text-gray-500">Format: PDF & Max file size: 25 MB</p>
         </div>
       ) : (
-        <motion.div 
-          className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200"
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <FontAwesomeIcon icon={faFile} className="text-primary-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              {isEditingTitle ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    ref={titleInputRef}
-                    value={jobDescTitle}
-                    onChange={(e) => setJobDescTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 flex-1 text-sm"
-                    placeholder="Enter JD title"
-                  />
-                  <motion.button 
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 text-sm rounded-md shadow-sm"
-                    onClick={handleUpdateTitle}
-                    disabled={isLoading.update}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    aria-label="Save title"
-                  >
-                    {isLoading.update ? (
-                      <FontAwesomeIcon icon={faSpinner} spin />
-                    ) : (
-                      <FontAwesomeIcon icon={faCheckCircle} />
-                    )}
-                  </motion.button>
-                  <motion.button 
-                    className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-3 py-2 text-sm rounded-md shadow-sm"
-                    onClick={() => setIsEditingTitle(false)}
-                    disabled={isLoading.update}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    aria-label="Cancel editing"
-                  >
-                    <FontAwesomeIcon icon={faTimes} />
-                  </motion.button>
+        <div className="space-y-3">
+          {files.map((file, index) => (
+            <motion.div 
+              key={index} 
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors duration-200"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.1 }}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FontAwesomeIcon icon={faFile} className="text-primary-600" />
                 </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{jobDescTitle}</p>
-                    <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                  </div>
-                  {selectedJD && (
-                    <button 
-                      className="p-2 text-gray-400 hover:text-primary-500 transition-colors duration-200 rounded-md hover:bg-primary-50"
-                      onClick={() => setIsEditingTitle(true)}
-                      disabled={isLoading.update}
-                      aria-label="Edit title"
-                    >
-                      {isLoading.update ? (
-                        <FontAwesomeIcon icon={faSpinner} spin size="sm" />
-                      ) : (
-                        <FontAwesomeIcon icon={faEdit} size="sm" />
+                <div className="flex-1 min-w-0">
+                  {index === 0 && isEditingTitle ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        ref={titleInputRef}
+                        value={jobDescTitle}
+                        onChange={(e) => setJobDescTitle(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 flex-1 text-sm"
+                        placeholder="Enter JD title"
+                      />
+                      <motion.button 
+                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 text-sm rounded-md shadow-sm"
+                        onClick={handleUpdateTitle}
+                        disabled={isLoading.update}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        aria-label="Save title"
+                      >
+                        {isLoading.update ? (
+                          <FontAwesomeIcon icon={faSpinner} spin />
+                        ) : (
+                          <FontAwesomeIcon icon={faCheckCircle} />
+                        )}
+                      </motion.button>
+                      <motion.button 
+                        className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-3 py-2 text-sm rounded-md shadow-sm"
+                        onClick={() => setIsEditingTitle(false)}
+                        disabled={isLoading.update}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        aria-label="Cancel editing"
+                      >
+                        <FontAwesomeIcon icon={faTimes} />
+                      </motion.button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{index === 0 ? jobDescTitle : file.name}</p>
+                        <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                      {index === 0 && selectedJD && (
+                        <button 
+                          className="p-2 text-gray-400 hover:text-primary-500 transition-colors duration-200 rounded-md hover:bg-primary-50"
+                          onClick={() => setIsEditingTitle(true)}
+                          disabled={isLoading.update}
+                          aria-label="Edit title"
+                        >
+                          {isLoading.update ? (
+                            <FontAwesomeIcon icon={faSpinner} spin size="sm" />
+                          ) : (
+                            <FontAwesomeIcon icon={faEdit} size="sm" />
+                          )}
+                        </button>
                       )}
-                    </button>
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+              <button 
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 ml-2"
+                onClick={() => removeFile(type, index)}
+                aria-label={`Remove ${file.name}`}
+              >
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
+            </motion.div>
+          ))}
+          <div className="flex justify-center">
+            <motion.button 
+              className="border border-primary-600 text-primary-600 hover:bg-primary-50 font-medium py-2.5 px-4 rounded-lg transition-colors w-full mt-4 flex items-center justify-center gap-2 shadow-sm hover:shadow-md max-w-xs mx-auto"
+              onClick={() => setActiveModal(type)}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <FontAwesomeIcon icon={faPlus} />
+              Add More Job Descriptions
+            </motion.button>
           </div>
-          <button 
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 ml-2"
-            onClick={() => removeFile(type)}
-            aria-label="Remove file"
-          >
-            <FontAwesomeIcon icon={faTrash} />
-          </button>
-        </motion.div>
+        </div>
       )}
     </motion.div>
   );
@@ -720,8 +746,8 @@ const UploadSection = ({ title, files, file, type, icon }) => {
         return;
       }
 
-      if (!jobDescFile) {
-        toast.error('Please upload a job description');
+      if (jobDescFiles.length === 0) {
+        toast.error('Please upload at least one job description');
         return;
       }
 
@@ -732,8 +758,9 @@ const UploadSection = ({ title, files, file, type, icon }) => {
           return;
         }
 
-        if ((usageLimits.usage?.jdUploads || 0) >= usageLimits.subscription.limits.jdUploads) {
-          toast.error('You have reached your job description upload limit');
+        const remainingJDs = usageLimits.subscription.limits.jdUploads - (usageLimits.usage?.jdUploads || 0);
+        if (jobDescFiles.length > remainingJDs) {
+          toast.error(`You can only upload ${remainingJDs} more job descriptions with your current plan`);
           return;
         }
       }
@@ -742,9 +769,9 @@ const UploadSection = ({ title, files, file, type, icon }) => {
       
       const formData = new FormData();
       resumeFiles.forEach((file) => formData.append("resumes", file));
-      formData.append("job_description", jobDescFile);
+      jobDescFiles.forEach((file) => formData.append("job_description", file));
       
-      if (jobDescTitle && !selectedJD) {
+      if (jobDescTitle && !selectedJD && jobDescFiles.length > 0) {
         formData.append("job_description_title", jobDescTitle);
       }
 
@@ -759,7 +786,7 @@ const UploadSection = ({ title, files, file, type, icon }) => {
         results: response.data?.results || [],
         duplicateCount: response.data?.duplicateCount || 0,
       });
-  navigate("/dashboard/response", { state: { fromUpload: true } });
+      navigate("/dashboard/response", { state: { fromUpload: true } });
 
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Error submitting files';
@@ -805,8 +832,8 @@ const UploadSection = ({ title, files, file, type, icon }) => {
             icon={faUsers}
           />
           <UploadSection 
-            title="Upload Job Description" 
-            file={jobDescFile} 
+            title="Upload Job Descriptions" 
+            files={jobDescFiles} 
             type="jobDesc" 
             icon={faFile}
           />
@@ -826,7 +853,7 @@ const UploadSection = ({ title, files, file, type, icon }) => {
                 : 'bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700'
             }`}
             onClick={handleSubmit}
-            disabled={isSubmitting || resumeFiles.length === 0 || !jobDescFile}
+            disabled={isSubmitting || resumeFiles.length === 0 || jobDescFiles.length === 0}
           >
             <div className="flex items-center justify-center gap-3">
               {isSubmitting ? (
@@ -894,7 +921,7 @@ const UploadSection = ({ title, files, file, type, icon }) => {
       <AnimatePresence>
         {activeModal && (
           <Modal
-            title={activeModal === "resume" ? "Upload Resumes" : "Upload Job Description"}
+            title={activeModal === "resume" ? "Upload Resumes" : "Upload Job Descriptions"}
             onClose={() => setActiveModal(null)}
           />
         )}

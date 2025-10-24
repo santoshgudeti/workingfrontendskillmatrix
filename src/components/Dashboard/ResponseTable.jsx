@@ -260,14 +260,26 @@ function ResponseTable({ data, duplicateCount }) {
     );
   }, [expandedLists]);
 
-  const handleResumeLink = async (resumeId) => {
+  const handleResumeLink = async (resumeUrl) => {
     try {
-      if (!resumeId) throw new Error("No resume ID");
-      const response = await axiosInstance.get(`/api/resumes/${resumeId}`);
-      return response.data?.url || "#";
+      if (!resumeUrl) throw new Error("No resume URL");
+      // For direct URLs from API response, we can directly use them
+      return resumeUrl;
     } catch (error) {
       console.error("Error getting resume URL:", error);
       toast.error("Failed to fetch resume URL");
+      return "#";
+    }
+  };
+
+  const handleJdLink = async (jdUrl) => {
+    try {
+      if (!jdUrl) throw new Error("No job description URL");
+      // For direct URLs from API response, we can directly use them
+      return jdUrl;
+    } catch (error) {
+      console.error("Error getting job description URL:", error);
+      toast.error("Failed to fetch job description URL");
       return "#";
     }
   };
@@ -336,27 +348,38 @@ function ResponseTable({ data, duplicateCount }) {
 
       const selectedCandidateData = Array.from(selectedCandidates).map(index => {
         const candidate = filteredMembers[index];
+        // Fix the resumeId extraction - it should be directly from candidate.resumeId
+        const resumeId = candidate.resumeId?._id || candidate.resumeId || candidate.Id || candidate._id;
+        
         return {
           index,
           name: candidate.matchingResult?.name || candidate.name || `Candidate_${index + 1}`,
           email: candidate.matchingResult?.email || candidate.email,
-          resumeId: candidate.resumeId?._id || candidate.resumeId || candidate.Id || candidate._id,
-          matchingPercentage: candidate.matchingPercentage || 0
+          resumeId: resumeId,
+          matchingPercentage: candidate.matchingPercentage || 0,
+          // Add resume URL for direct access
+          resumeUrl: candidate["Resume URL"] || candidate.resumeUrl
         };
       });
 
       console.log('📊 [BULK DOWNLOAD] Selected candidates:', selectedCandidateData);
 
-      // Collect resume IDs for bulk download
+      // Collect resume IDs for bulk download - updated to handle both ID and URL cases
       const resumeIds = selectedCandidateData
         .map(candidate => candidate.resumeId)
         .filter(Boolean);
 
-      if (resumeIds.length === 0) {
-        throw new Error('No valid resume IDs found for selected candidates');
+      // Also collect candidates with direct resume URLs in case resumeId is missing
+      const candidatesWithUrls = selectedCandidateData.filter(candidate => 
+        !candidate.resumeId && (candidate.resumeUrl)
+      );
+
+      if (resumeIds.length === 0 && candidatesWithUrls.length === 0) {
+        throw new Error('No valid resume IDs or URLs found for selected candidates');
       }
 
       console.log('📋 [BULK DOWNLOAD] Resume IDs to download:', resumeIds);
+      console.log('🔗 [BULK DOWNLOAD] Candidates with direct URLs:', candidatesWithUrls);
 
       // Call backend bulk download endpoint
       const response = await axiosInstance.post('/api/resumes/bulk-download', {
@@ -408,34 +431,6 @@ function ResponseTable({ data, duplicateCount }) {
       setBulkDownloadInProgress(false);
     }
   };
-
-  // Update filtered members effect to clear selections
-  useEffect(() => {
-    setSelectedCandidates(new Set());
-    setIsAllCandidatesSelected(false);
-  }, [filteredMembers]);
-
-  // Handle click outside to close dropdowns
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      Object.keys(resumeDropdownRefs.current).forEach(key => {
-        if (resumeDropdownRefs.current[key] && !resumeDropdownRefs.current[key].contains(event.target)) {
-          setResumeDropdownOpen(prev => ({ ...prev, [key]: false }));
-        }
-      });
-      
-      Object.keys(interviewDropdownRefs.current).forEach(key => {
-        if (interviewDropdownRefs.current[key] && !interviewDropdownRefs.current[key].contains(event.target)) {
-          setInterviewDropdownOpen(prev => ({ ...prev, [key]: false }));
-        }
-      });
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   // Add this function to render media actions if available
   const renderMediaActions = (assessmentSession, index) => {
@@ -1076,7 +1071,8 @@ function ResponseTable({ data, duplicateCount }) {
                                     onClick={async (e) => {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      const url = await handleResumeLink(result.resumeId?._id || result.resumeId || result.Id);
+                                      // Use resume URL from POST Response directly
+                                      const url = await handleResumeLink(result["Resume URL"] || result.resumeUrl);
                                       if (url && url !== "#") {
                                         window.open(url, "_blank");
                                       }
@@ -1096,11 +1092,15 @@ function ResponseTable({ data, duplicateCount }) {
                                       e.preventDefault();
                                       e.stopPropagation();
                                       try {
-                                        const response = await axiosInstance.get(
-                                          `/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}?download=true`
-                                        );
-                                        if (response.data?.url) {
-                                          window.location.href = response.data.url;
+                                        // For download, we can use the direct URL with download parameter
+                                        const url = result["Resume URL"] || result.resumeUrl;
+                                        if (url) {
+                                          const link = document.createElement('a');
+                                          link.href = url;
+                                          link.download = result["Resume Filename"] || 'resume.pdf';
+                                          document.body.appendChild(link);
+                                          link.click();
+                                          document.body.removeChild(link);
                                         }
                                       } catch (error) {
                                         console.error("Download failed:", error);
@@ -1115,6 +1115,26 @@ function ResponseTable({ data, duplicateCount }) {
                                   >
                                     <FontAwesomeIcon icon={faDownload} className="mr-2 h-4 w-4 text-green-600" />
                                     Download Resume
+                                  </button>
+                                  <button
+                                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={async (e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      // Use JD URL from POST Response directly
+                                      const url = await handleJdLink(result["JD URL"] || result.jdUrl);
+                                      if (url && url !== "#") {
+                                        window.open(url, "_blank");
+                                      }
+                                      setResumeDropdownOpen(prev => ({
+                                        ...prev,
+                                        [result._id || result.Id]: false
+                                      }));
+                                    }}
+                                    aria-label="View job description"
+                                  >
+                                    <FontAwesomeIcon icon={faFileAlt} className="mr-2 h-4 w-4 text-blue-600" />
+                                    View Job Description
                                   </button>
                                 </div>
                               )}

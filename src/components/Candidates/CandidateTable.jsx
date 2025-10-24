@@ -602,43 +602,36 @@ function CandidateTable() {
     }
   };
 
-  const handleResumeLink = async (resumeId) => {
+  const handleResumeLink = async (resumeUrl) => {
     try {
-      if (!resumeId) {
-        console.error('No resume ID provided');
-        return { success: false, error: 'No resume selected' };
+      if (!resumeUrl) {
+        console.error('No resume URL provided');
+        return { success: false, error: 'No resume URL provided' };
       }
-      const response = await axiosInstance.get(`/api/resumes/${resumeId}`);
-      if (!response.data?.success) {
-        throw new Error(response.data?.error || 'Failed to get resume URL');
-      }
+      // For direct URLs from API response, we can directly use them
       return {
         success: true,
-        url: response.data.url,
-        filename: response.data.filename
+        url: resumeUrl
       };
     } catch (error) {
       console.error('Error getting resume URL:', {
         error: error.response?.data || error.message,
-        resumeId
+        resumeUrl
       });
       return { 
         success: false,
-        error: error.response?.data?.error || 'Failed to access resume',
-        details: process.env.NODE_ENV === 'development' 
-          ? error.response?.data?.details || error.message 
-          : undefined
+        error: 'Failed to access resume'
       };
     }
   };
 
-  const handlejdLink = async (jobDescriptionId) => {
+  const handlejdLink = async (jdUrl) => {
     try {
-      if (!jobDescriptionId) return '#';
-      const response = await axiosInstance.get(`/api/job-descriptions/${jobDescriptionId}`);
-      return response.data?.url || '#';
+      if (!jdUrl) return '#';
+      // For direct URLs from API response, we can directly use them
+      return jdUrl;
     } catch (error) {
-      console.error('Error getting resume URL:', error);
+      console.error('Error getting job description URL:', error);
       return '#';
     }
   };
@@ -1448,9 +1441,16 @@ function CandidateTable() {
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
-                    const response = await axiosInstance.get(`/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}`);
-                    if (response.data?.url) {
-                      window.open(response.data.url, '_blank');
+                    // Use resume URL from POST Response directly
+                    const resumeUrl = result["Resume URL"] || (result.matchingResult?.[0] && result.matchingResult[0]["Resume URL"]);
+                    if (resumeUrl) {
+                      window.open(resumeUrl, '_blank');
+                    } else {
+                      // Fallback to existing method
+                      const response = await axiosInstance.get(`/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}`);
+                      if (response.data?.url) {
+                        window.open(response.data.url, '_blank');
+                      }
                     }
                   } catch (error) {
                     console.error('Error viewing resume:', error);
@@ -1470,9 +1470,21 @@ function CandidateTable() {
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
-                    const response = await axiosInstance.get(`/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}?download=true`);
-                    if (response.data?.url) {
-                      window.location.href = response.data.url;
+                    // Use resume URL from POST Response directly for download
+                    const resumeUrl = result["Resume URL"] || (result.matchingResult?.[0] && result.matchingResult[0]["Resume URL"]);
+                    if (resumeUrl) {
+                      const link = document.createElement('a');
+                      link.href = resumeUrl;
+                      link.download = result["Resume Filename"] || 'resume.pdf';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    } else {
+                      // Fallback to existing method
+                      const response = await axiosInstance.get(`/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}?download=true`);
+                      if (response.data?.url) {
+                        window.location.href = response.data.url;
+                      }
                     }
                   } catch (error) {
                     console.error('Download failed:', error);
@@ -1492,9 +1504,16 @@ function CandidateTable() {
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
-                    const response = await axiosInstance.get(`/api/job-descriptions/${result.jobDescriptionId?._id || result.jobDescriptionId}`);
-                    if (response.data?.url) {
-                      window.open(response.data.url, '_blank');
+                    // Use JD URL from POST Response directly
+                    const jdUrl = result["JD URL"] || (result.matchingResult?.[0] && result.matchingResult[0]["JD URL"]);
+                    if (jdUrl) {
+                      window.open(jdUrl, '_blank');
+                    } else {
+                      // Fallback to existing method
+                      const response = await axiosInstance.get(`/api/job-descriptions/${result.jobDescriptionId?._id || result.jobDescriptionId}`);
+                      if (response.data?.url) {
+                        window.open(response.data.url, '_blank');
+                      }
                     }
                   } catch (error) {
                     console.error('Error viewing JD:', error);
@@ -1647,7 +1666,9 @@ function CandidateTable() {
                 // as the backend expects assessmentSessionId for both
                 if (result.assessmentSession && result.assessmentSession._id) {
                   console.log('Navigating to candidate details:', {
-                    assessmentSessionId: result.assessmentSession._id
+                    candidateId: result.assessmentSession._id,
+                    assessmentSessionId: result.assessmentSession._id,
+                    candidateData: resumeData
                   });
                   navigate(`/dashboard/candidate-details/${result.assessmentSession._id}/${result.assessmentSession._id}`);
                 } else {
