@@ -199,6 +199,10 @@ function CandidateTable() {
                 "Candidate Industrial Experience": member.matchingResult[0].Analysis?.["Candidate Industrial Experience"] || "N/A",
                 "Required Domain Experience": member.matchingResult[0].Analysis?.["Required Domain Experience"] || "N/A",
                 "Candidate Domain Experience": member.matchingResult[0].Analysis?.["Candidate Domain Experience"] || "N/A",
+                // New fields
+                "Experience Threshold Compliance": member.matchingResult[0].Analysis?.["Experience Threshold Compliance"] || "N/A",
+                "Recent Experience Relevance": member.matchingResult[0].Analysis?.["Recent Experience Relevance"] || "N/A",
+                "Analysis Summary": member.matchingResult[0]["Analysis Summary"] || member.matchingResult[0].Analysis?.["Analysis Summary"] || "N/A"
               }
             }] : []
           }
@@ -454,6 +458,10 @@ function CandidateTable() {
                   "Candidate Industrial Experience": member.matchingResult[0].Analysis?.["Candidate Industrial Experience"] || "N/A",
                   "Required Domain Experience": member.matchingResult[0].Analysis?.["Required Domain Experience"] || "N/A",
                   "Candidate Domain Experience": member.matchingResult[0].Analysis?.["Candidate Domain Experience"] || "N/A",
+                  // New fields
+                  "Experience Threshold Compliance": member.matchingResult[0].Analysis?.["Experience Threshold Compliance"] || "N/A",
+                  "Recent Experience Relevance": member.matchingResult[0].Analysis?.["Recent Experience Relevance"] || "N/A",
+                  "Analysis Summary": member.matchingResult[0]["Analysis Summary"] || member.matchingResult[0].Analysis?.["Analysis Summary"] || "N/A"
                 }
               }] : []
             }));
@@ -2365,6 +2373,21 @@ function CandidateTable() {
                         <span className="analysis-label text-xs">Candidate Domain Experience:</span>
                         <span className="analysis-value text-xs">{analysis["Candidate Domain Experience"] || "N/A"}</span>
                       </div>
+                      {/* New fields */}
+                      <div className="analysis-metric">
+                        <span className="analysis-label text-xs">Experience Threshold Compliance:</span>
+                        <span className="analysis-value text-xs">{analysis["Experience Threshold Compliance"] || "N/A"}</span>
+                      </div>
+                      <div className="analysis-metric">
+                        <span className="analysis-label text-xs">Recent Experience Relevance:</span>
+                        <span className="analysis-value text-xs">{analysis["Recent Experience Relevance"] || "N/A"}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Analysis Summary */}
+                    <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                      <h4 className="text-xs font-semibold text-gray-900 mb-1">Analysis Summary</h4>
+                      <p className="text-xs text-gray-700">{analysis["Analysis Summary"] || "No summary available"}</p>
                     </div>
                   </div>
                 </div>

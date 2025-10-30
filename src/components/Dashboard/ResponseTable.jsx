@@ -5,7 +5,7 @@ import {
   faChevronDown, faChevronUp, faStar, faDownload, faEye,
   faTools, faUserTie, faGraduationCap, faBuilding, faBriefcase,
   faIdBadge, faCalendarAlt, faFilePdf, faTimes, faSpinner, faPlayCircle,
-  faHandshake
+  faHandshake, faDesktop, faMicrophone
 } from "@fortawesome/free-solid-svg-icons";
 import { faGoogle, faMicrosoft } from "@fortawesome/free-brands-svg-icons";
 import React, { useState, useEffect, useRef, useMemo } from "react";
@@ -46,8 +46,8 @@ function ResponseTable({ data, duplicateCount }) {
   const { mediaOperations, viewAudio, downloadAudio, viewVideo, downloadVideo, extractFileKey } = useMediaOperations();
   
   // Add state for dropdowns
-  const [resumeDropdownOpen, setResumeDropdownOpen] = useState({});
-  const [interviewDropdownOpen, setInterviewDropdownOpen] = useState({});
+  const [openResumeDropdown, setOpenResumeDropdown] = useState(null);
+  const [openInterviewDropdown, setOpenInterviewDropdown] = useState(null);
   
   // Refs for dropdown containers
   const resumeDropdownRefs = useRef({});
@@ -98,6 +98,30 @@ function ResponseTable({ data, duplicateCount }) {
         const matchingResult = result["Resume Data"] || result.matchingResult?.[0]?.["Resume Data"] || result;
         const analysis = result.matchingResult?.[0]?.Analysis || result.Analysis || {};
         const matchingPercentage = result["Matching Percentage"] || result.matchingResult?.[0]?.["Matching Percentage"] || analysis["Matching Score"] || 0;
+        // Debug logging - uncomment to see data structure
+        // console.log('Processing result:', { result, matchingResult, analysis });
+        
+        // More robust extraction of new fields from various possible locations
+        const experienceThresholdCompliance = 
+          analysis["Experience Threshold Compliance"] || 
+          result["Experience Threshold Compliance"] || 
+          result.matchingResult?.[0]?.["Experience Threshold Compliance"] ||
+          "N/A";
+          
+        const recentExperienceRelevance = 
+          analysis["Recent Experience Relevance"] || 
+          result["Recent Experience Relevance"] || 
+          result.matchingResult?.[0]?.["Recent Experience Relevance"] ||
+          "N/A";
+          
+        const analysisSummary = 
+          result["Analysis Summary"] || 
+          analysis["Analysis Summary"] || 
+          analysis["analysisSummary"] || 
+          result.analysisSummary ||
+          result.matchingResult?.[0]?.["Analysis Summary"] ||
+          "N/A";
+        
         return { 
           ...result, 
           matchingResult, 
@@ -114,6 +138,10 @@ function ResponseTable({ data, duplicateCount }) {
             "Candidate Industrial Experience": analysis["Candidate Industrial Experience"] || "N/A",
             "Required Domain Experience": analysis["Required Domain Experience"] || "N/A",
             "Candidate Domain Experience": analysis["Candidate Domain Experience"] || "N/A",
+            // New fields - comprehensive extraction to handle different API response formats
+            "Experience Threshold Compliance": experienceThresholdCompliance,
+            "Recent Experience Relevance": recentExperienceRelevance,
+            "Analysis Summary": analysisSummary
           }
         };
       })
@@ -415,27 +443,22 @@ function ResponseTable({ data, duplicateCount }) {
     setIsAllCandidatesSelected(false);
   }, [filteredMembers]);
 
-  // Handle click outside to close dropdowns
+  // STATE REFACTOR: Only one resume and one interview dropdown open at a time
+  // Ensure dropdowns are triggered/cancelled ONLY on click or outside click, never hover/leave
   useEffect(() => {
     const handleClickOutside = (event) => {
-      Object.keys(resumeDropdownRefs.current).forEach(key => {
-        if (resumeDropdownRefs.current[key] && !resumeDropdownRefs.current[key].contains(event.target)) {
-          setResumeDropdownOpen(prev => ({ ...prev, [key]: false }));
-        }
-      });
-      
-      Object.keys(interviewDropdownRefs.current).forEach(key => {
-        if (interviewDropdownRefs.current[key] && !interviewDropdownRefs.current[key].contains(event.target)) {
-          setInterviewDropdownOpen(prev => ({ ...prev, [key]: false }));
-        }
-      });
+      const inResume = openResumeDropdown &&
+        resumeDropdownRefs.current[openResumeDropdown] &&
+        resumeDropdownRefs.current[openResumeDropdown].contains(event.target);
+      const inInterview = openInterviewDropdown &&
+        interviewDropdownRefs.current[openInterviewDropdown] &&
+        interviewDropdownRefs.current[openInterviewDropdown].contains(event.target);
+      if (!inResume) setOpenResumeDropdown(null);
+      if (!inInterview) setOpenInterviewDropdown(null);
     };
-
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openResumeDropdown, openInterviewDropdown]);
 
   // Add this function to render media actions if available
   const renderMediaActions = (assessmentSession, index) => {
@@ -974,8 +997,17 @@ function ResponseTable({ data, duplicateCount }) {
                 {filteredMembers.map((result, index) => {
                   const resumeData = result.matchingResult || result;
                   const analysis = result.Analysis || {};
+                  // Debug logging - uncomment to see what's happening
+                  // console.log('Rendering result:', { 
+                  //   index, 
+                  //   resultId: result._id, 
+                  //   hasAnalysis: !!result.Analysis, 
+                  //   analysisKeys: Object.keys(result.Analysis || {}), 
+                  //   analysisSummary: analysis["Analysis Summary"] 
+                  // });
                   const testScore = result.testScore || {};
                   const assessmentSession = result.assessmentSession || {};
+                  const dropdownKey = result._id || result.resumeId || result.Id || index;
                   return (
                     <React.Fragment key={index}>
                       <motion.tr 
@@ -1054,144 +1086,108 @@ function ResponseTable({ data, duplicateCount }) {
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap md:px-6 md:py-4">
                           <div className="flex space-x-2">
-                            <div className="relative" ref={el => resumeDropdownRefs.current[result._id || result.Id] = el}>
+                            {/* Resume Dropdown Column */}
+                            <div className="candidate-table-dropdown" ref={el => resumeDropdownRefs.current[dropdownKey] = el}>
                               <button
-                                id={`resume-dropdown-${result._id || result.Id}`}
-                                className="btn-modern bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border-indigo-200 p-2"
-                                aria-label="Resume actions"
-                                onClick={(e) => {
+                                type="button"
+                                className="btn-modern bg-blue-100 hover:bg-blue-200 text-blue-800 border-blue-200 p-2"
+                                onClick={e => {
                                   e.stopPropagation();
-                                  setResumeDropdownOpen(prev => ({
-                                    ...prev,
-                                    [result._id || result.Id]: !prev[result._id || result.Id]
-                                  }));
-                                }}
-                              >
-                                <FontAwesomeIcon icon={faFileAlt} className="h-4 w-4" />
+                                  console.log('Dropdown trigger for candidate:', { dropdownKey, result });
+                                  setOpenResumeDropdown(prev => prev === dropdownKey ? null : dropdownKey);
+                                }}>
+                                <FontAwesomeIcon icon={faFileAlt} />
                               </button>
-                              {resumeDropdownOpen[result._id || result.Id] && (
-                                <div className="response-table-dropdown-menu bg-white rounded-md shadow-lg border border-gray-200 z-50">
+                              {openResumeDropdown === dropdownKey && (
+                                <div className="candidate-table-dropdown-menu bg-white rounded-md shadow-lg border border-gray-200 z-50"
+                                  onClick={e => e.stopPropagation()}
+                                >
                                   <button
-                                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={async (e) => {
-                                      e.preventDefault();
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={async e => {
                                       e.stopPropagation();
                                       const url = await handleResumeLink(result.resumeId?._id || result.resumeId || result.Id);
-                                      if (url && url !== "#") {
-                                        window.open(url, "_blank");
-                                      }
-                                      setResumeDropdownOpen(prev => ({
-                                        ...prev,
-                                        [result._id || result.Id]: false
-                                      }));
-                                    }}
-                                    aria-label="View resume"
-                                  >
-                                    <FontAwesomeIcon icon={faEye} className="mr-2 h-4 w-4 text-indigo-600" />
+                                      console.log('Resume URL for dropdown:', url, result);
+                                      if (url && url !== "#") window.open(url, '_blank');
+                                      setOpenResumeDropdown(null);
+                                    }}>
+                                    <FontAwesomeIcon icon={faEye} className="mr-2" />
                                     View Resume
                                   </button>
                                   <button
-                                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={async (e) => {
-                                      e.preventDefault();
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={async e => {
                                       e.stopPropagation();
                                       try {
-                                        const response = await axiosInstance.get(
-                                          `/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}?download=true`
-                                        );
-                                        if (response.data?.url) {
-                                          window.location.href = response.data.url;
-                                        }
-                                      } catch (error) {
-                                        console.error("Download failed:", error);
-                                        toast.error("Failed to initiate download");
-                                      }
-                                      setResumeDropdownOpen(prev => ({
-                                        ...prev,
-                                        [result._id || result.Id]: false
-                                      }));
-                                    }}
-                                    aria-label="Download resume"
-                                  >
-                                    <FontAwesomeIcon icon={faDownload} className="mr-2 h-4 w-4 text-green-600" />
+                                        const response = await axiosInstance.get(`/api/resumes/${result.resumeId?._id || result.resumeId || result.Id}?download=true`);
+                                        if (response.data?.url) window.location.href = response.data.url;
+                                      } catch (err) { toast.error('Failed to download resume'); }
+                                      setOpenResumeDropdown(null);
+                                    }}>
+                                    <FontAwesomeIcon icon={faDownload} className="mr-2" />
                                     Download Resume
+                                  </button>
+                                  <button
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={async e => {
+                                      e.stopPropagation();
+                                      try {
+                                        const response = await axiosInstance.get(`/api/job-descriptions/${result.jobDescriptionId?._id || result.jobDescriptionId || result.Id}`);
+                                        if (response.data?.url) {
+                                          console.log('JD URL:', response.data.url, result);
+                                          window.open(response.data.url, '_blank');
+                                        }
+                                      } catch (err) { toast.error('Failed to view job description'); }
+                                      setOpenResumeDropdown(null);
+                                    }}>
+                                    <FontAwesomeIcon icon={faFileAlt} className="mr-2" />
+                                    View Job Description
                                   </button>
                                 </div>
                               )}
                             </div>
-                            <div className="relative" ref={el => interviewDropdownRefs.current[result._id || result.Id] = el}>
+                            {/* Interview Dropdown Column */}
+                            <div className="candidate-table-dropdown" ref={el => interviewDropdownRefs.current[dropdownKey] = el}>
                               <button
-                                className="btn-modern bg-blue-100 hover:bg-blue-200 text-blue-800 border-blue-200 flex items-center gap-1 px-2 py-2 md:gap-2 md:px-3 md:py-2"
-                                aria-label="Interview scheduling options"
-                                onClick={(e) => {
+                                type="button"
+                                className="btn-modern bg-purple-100 hover:bg-purple-200 text-purple-800 border-purple-200 flex items-center gap-1 px-2 py-2"
+                                onClick={e => {
                                   e.stopPropagation();
-                                  setInterviewDropdownOpen(prev => ({
-                                    ...prev,
-                                    [result._id || result.Id]: !prev[result._id || result.Id]
-                                  }));
-                                }}
-                              >
-                                <FontAwesomeIcon icon={faCalendarAlt} className="h-4 w-4 text-xs md:text-sm" />
-                                <span className="text-xs font-medium md:text-sm hidden md:inline">Interview</span>
+                                  setOpenInterviewDropdown(prev => prev === dropdownKey ? null : dropdownKey);
+                                }}>
+                                <FontAwesomeIcon icon={faCalendarAlt} className="text-xs md:text-sm" />
+                                <span className="text-xs font-medium md:text-sm hidden md:inline">Schedule</span>
                               </button>
-                              {interviewDropdownOpen[result._id || result.Id] && (
-                                <div className="response-table-dropdown-menu bg-white rounded-md shadow-lg border border-gray-200 z-50">
+                              {openInterviewDropdown === dropdownKey && (
+                                <div className="candidate-table-dropdown-menu bg-white rounded-md shadow-lg border border-gray-200 z-50"
+                                  onClick={e => e.stopPropagation()}
+                                >
                                   <a
-                                    href={`https://calendar.google.com/calendar/render?action=TEMPLATE&add=${encodeURIComponent(
-                                      resumeData.email || ""
-                                    )}&text=${encodeURIComponent(`Interview - ${resumeData["Job Title"] || "Job Title"}`)}}`}
+                                    href={`https://calendar.google.com/calendar/render?action=TEMPLATE&add=${encodeURIComponent(resumeData.email || "")}&text=${encodeURIComponent(`Interview - ${resumeData["Job Title"] || "Job Title"}`)}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setInterviewDropdownOpen(prev => ({
-                                        ...prev,
-                                        [result._id || result.Id]: false
-                                      }));
-                                    }}
-                                    aria-label="Schedule with Google Calendar"
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={e => { e.stopPropagation(); setOpenInterviewDropdown(null); }}
                                   >
-                                    <FontAwesomeIcon icon={faGoogle} className="mr-2 h-4 w-4 text-red-500" />
-                                    Google Calendar
+                                    <FontAwesomeIcon icon={faGoogle} className="mr-2" />Google Calendar
                                   </a>
                                   <a
-                                    href={`https://outlook.office.com/calendar/0/deeplink/compose?to=${encodeURIComponent(
-                                      resumeData.email || ""
-                                    )}&subject=${encodeURIComponent(`Interview - ${resumeData["Job Title"] || "Job Title"}`)}`}
+                                    href={`https://outlook.office.com/calendar/0/deeplink/compose?to=${encodeURIComponent(resumeData.email || "")}&subject=${encodeURIComponent(`Interview - ${resumeData["Job Title"] || "Job Title"}`)}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setInterviewDropdownOpen(prev => ({
-                                        ...prev,
-                                        [result._id || result.Id]: false
-                                      }));
-                                    }}
-                                    aria-label="Schedule with Microsoft Teams"
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={e => { e.stopPropagation(); setOpenInterviewDropdown(null); }}
                                   >
-                                    <FontAwesomeIcon icon={faMicrosoft} className="mr-2 h-4 w-4 text-blue-500" />
-                                    Microsoft Teams
+                                    <FontAwesomeIcon icon={faMicrosoft} className="mr-2" />Microsoft Teams
                                   </a>
                                   <a
-                                    href={`https://zoom.us/schedule?email=${encodeURIComponent(
-                                      resumeData.email || ""
-                                    )}&topic=${encodeURIComponent(`Interview - ${resumeData["Job Title"] || "Job Title"}`)}`}
+                                    href={`https://zoom.us/schedule?email=${encodeURIComponent(resumeData.email || "")}&topic=${encodeURIComponent(`Interview - ${resumeData["Job Title"] || "Job Title"}`)}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setInterviewDropdownOpen(prev => ({
-                                        ...prev,
-                                        [result._id || result.Id]: false
-                                      }));
-                                    }}
-                                    aria-label="Schedule with Zoom"
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={e => { e.stopPropagation(); setOpenInterviewDropdown(null); }}
                                   >
-                                    <FontAwesomeIcon icon={faVideo} className="mr-2 h-4 w-4 text-blue-400" />
-                                    Zoom
+                                    <FontAwesomeIcon icon={faVideo} className="mr-2" />Zoom
                                   </a>
                                 </div>
                               )}
@@ -1458,6 +1454,21 @@ function ResponseTable({ data, duplicateCount }) {
                     <span className="analysis-label text-xs">Candidate Domain Experience:</span>
                     <span className="analysis-value text-xs">{analysis["Candidate Domain Experience"] || "N/A"}</span>
                   </div>
+                  {/* New fields */}
+                  <div className="analysis-metric">
+                    <span className="analysis-label text-xs">Experience Threshold Compliance:</span>
+                    <span className="analysis-value text-xs">{analysis["Experience Threshold Compliance"] || "N/A"}</span>
+                  </div>
+                  <div className="analysis-metric">
+                    <span className="analysis-label text-xs">Recent Experience Relevance:</span>
+                    <span className="analysis-value text-xs">{analysis["Recent Experience Relevance"] || "N/A"}</span>
+                  </div>
+                </div>
+                
+                {/* Analysis Summary */}
+                <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                  <h4 className="text-xs font-semibold text-gray-900 mb-1">Analysis Summary</h4>
+                  <p className="text-xs text-gray-700">{analysis["Analysis Summary"] || "No summary available"}</p>
                 </div>
               </div>
             </div>
