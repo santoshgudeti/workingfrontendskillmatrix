@@ -12,7 +12,8 @@ import {
   faSpinner, faCheckCircle, faExclamationTriangle,
   faTimes, faFilter, faSort, faDesktop, faPlayCircle,
   faMicrophone,faChevronLeft,faChevronRight,faFilePdf,
-  faRobot, faUserEdit // Add these new icons
+  faRobot, faUserEdit, faInfoCircle, faCheck, faQuestionCircle, faList, faPaperPlane, 
+  faFileExcel, faUpload
 } from "@fortawesome/free-solid-svg-icons";
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -24,6 +25,7 @@ import { axiosInstance } from "../../axiosUtils";
 
 // Add this new component for the custom assessment modal
 const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [assessmentType, setAssessmentType] = useState('ai'); // 'ai' or 'custom'
   const [mcqQuestions, setMcqQuestions] = useState([
     { question: '', options: ['', '', '', ''], correctAnswer: '' },
@@ -40,6 +42,8 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
   const [voiceQuestions, setVoiceQuestions] = useState(['', '', '', '', '']);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [excelFile, setExcelFile] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   if (!show) return null;
 
@@ -130,6 +134,31 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
       return;
     }
 
+    // Check if there are any incomplete questions before validating
+    const hasIncompleteQuestions = mcqQuestions.some(q => 
+      !q.question.trim() || 
+      q.options.some(opt => !opt.trim()) || 
+      !q.correctAnswer.trim()
+    ) || voiceQuestions.some(q => !q.trim());
+
+    // If there are incomplete questions, show a confirmation dialog
+    if (hasIncompleteQuestions) {
+      const confirmed = window.confirm(
+        'You have some incomplete questions.\n\n' +
+        'MCQ Questions: ' + mcqQuestions.filter(q => 
+          !q.question.trim() || 
+          q.options.some(opt => !opt.trim()) || 
+          !q.correctAnswer.trim()
+        ).length + ' incomplete\n' +
+        'Voice Questions: ' + voiceQuestions.filter(q => !q.trim()).length + ' incomplete\n\n' +
+        'Do you want to proceed with submission anyway?'
+      );
+      
+      if (!confirmed) {
+        return; // User cancelled the submission
+      }
+    }
+
     // For custom assessment, validate and submit custom questions
     if (!validateCustomQuestions()) {
       return;
@@ -150,48 +179,167 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
     }
   };
 
+  // Function to handle Excel file upload
+  const handleExcelFileUpload = async (file) => {
+    // Check file type
+    if (!file.name.endsWith('.xlsx')) {
+      setError('Please upload a valid Excel file (.xlsx)');
+      return;
+    }
+    
+    // Check file size (limit to 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File size exceeds 5MB limit');
+      return;
+    }
+    
+    setIsProcessing(true);
+    setError('');
+    setExcelFile(file);
+    
+    try {
+      // Dynamically import xlsx library
+      const XLSX = await import('xlsx');
+      
+      // Read the Excel file
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          
+          // Process MCQ Questions sheet
+          const mcqSheetName = workbook.SheetNames.find(name => name.includes('MCQ'));
+          if (!mcqSheetName) {
+            setError('MCQ Questions sheet not found in the Excel file');
+            setIsProcessing(false);
+            return;
+          }
+          
+          const mcqSheet = workbook.Sheets[mcqSheetName];
+          const mcqData = XLSX.utils.sheet_to_json(mcqSheet);
+          
+          // Validate MCQ data
+          if (mcqData.length !== 10) {
+            setError(`Expected exactly 10 MCQ questions, but found ${mcqData.length}`);
+            setIsProcessing(false);
+            return;
+          }
+          
+          // Format MCQ questions
+          const formattedMcqQuestions = mcqData.map((row, index) => {
+            // Extract options from Option A, Option B, etc.
+            const options = [
+              row['Option A'] || '',
+              row['Option B'] || '',
+              row['Option C'] || '',
+              row['Option D'] || ''
+            ];
+            
+            return {
+              question: row['Question'] || '',
+              options: options,
+              correctAnswer: row['Correct Answer'] || ''
+            };
+          });
+          
+          // Process Voice Questions sheet
+          const voiceSheetName = workbook.SheetNames.find(name => name.includes('Voice'));
+          if (!voiceSheetName) {
+            setError('Voice Questions sheet not found in the Excel file');
+            setIsProcessing(false);
+            return;
+          }
+          
+          const voiceSheet = workbook.Sheets[voiceSheetName];
+          const voiceData = XLSX.utils.sheet_to_json(voiceSheet);
+          
+          // Validate voice data
+          if (voiceData.length !== 5) {
+            setError(`Expected exactly 5 voice questions, but found ${voiceData.length}`);
+            setIsProcessing(false);
+            return;
+          }
+          
+          // Format voice questions (extract just the text)
+          const formattedVoiceQuestions = voiceData.map(row => row['Question Text'] || '');
+          
+          // Update state with the parsed questions
+          setMcqQuestions(formattedMcqQuestions);
+          setVoiceQuestions(formattedVoiceQuestions);
+          
+          // Show success message
+          alert(`Successfully loaded ${formattedMcqQuestions.length} MCQ questions and ${formattedVoiceQuestions.length} voice questions from the Excel file.`);
+          // Automatically show preview after successful upload
+          setShowPreviewModal(true);
+        } catch (err) {
+          setError('Error processing Excel file: ' + err.message);
+          setExcelFile(null);
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+      
+      reader.onerror = () => {
+        setError('Error reading the file');
+        setExcelFile(null);
+        setIsProcessing(false);
+      };
+      
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      setError('Failed to load Excel processing library: ' + err.message);
+      setExcelFile(null);
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <motion.div
-          className="card-glass max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+          className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto"
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          transition={{ type: "spring", damping: 25, stiffness: 300 }}
         >
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Create Assessment</h2>
+          <div className="p-6 md:p-8">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Create Assessment</h2>
+                <p className="text-gray-600 mt-1">Choose assessment type and configure questions</p>
+              </div>
               <button 
                 onClick={onClose}
-                className="text-gray-500 hover:text-gray-700"
+                className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors duration-200"
               >
-                <FontAwesomeIcon icon={faTimes} />
+                <FontAwesomeIcon icon={faTimes} className="text-gray-500" />
               </button>
             </div>
 
-            <div className="mb-6">
-              <div className="flex border-b border-gray-200">
+            <div className="mb-8">
+              <div className="flex flex-wrap border-b border-gray-200 -mx-1">
                 <button
-                  className={`py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
+                  className={`m-1 px-6 py-3 font-medium text-sm rounded-lg transition-all duration-200 flex items-center gap-2 ${
                     assessmentType === 'ai'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'bg-blue-100 text-blue-700 shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-100'
                   }`}
                   onClick={() => setAssessmentType('ai')}
                 >
-                  <FontAwesomeIcon icon={faRobot} className="mr-2" />
+                  <FontAwesomeIcon icon={faRobot} />
                   AI Generated Assessment
                 </button>
                 <button
-                  className={`py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
+                  className={`m-1 px-6 py-3 font-medium text-sm rounded-lg transition-all duration-200 flex items-center gap-2 ${
                     assessmentType === 'custom'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'bg-blue-100 text-blue-700 shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-100'
                   }`}
                   onClick={() => setAssessmentType('custom')}
                 >
-                  <FontAwesomeIcon icon={faUserEdit} className="mr-2" />
+                  <FontAwesomeIcon icon={faUserEdit} />
                   Custom Assessment
                 </button>
               </div>
@@ -199,20 +347,43 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
 
             {assessmentType === 'ai' && (
               <div className="text-center py-8">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FontAwesomeIcon icon={faRobot} className="text-2xl text-blue-600" />
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                  <FontAwesomeIcon icon={faRobot} className="text-3xl text-white" />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Generated Assessment</h3>
-                <p className="text-gray-600 mb-6">
+                <h3 className="text-2xl font-bold text-gray-900 mb-3">AI Generated Assessment</h3>
+                <p className="text-gray-600 mb-8 max-w-2xl mx-auto">
                   Automatically generate 10 MCQ questions and 5 voice questions based on the candidate's resume and job description.
                 </p>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
-                  <h4 className="font-semibold text-blue-800 mb-2">What to expect:</h4>
-                  <ul className="list-disc pl-5 space-y-1 text-blue-700">
-                    <li>10 technical and behavioral MCQ questions</li>
-                    <li>5 voice interview questions</li>
-                    <li>Automated question generation based on job requirements</li>
-                    <li>Proctored assessment with video recording</li>
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6 text-left max-w-2xl mx-auto shadow-sm">
+                  <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faInfoCircle} />
+                    What to expect:
+                  </h4>
+                  <ul className="space-y-3">
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">10 technical and behavioral MCQ questions</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">5 voice interview questions</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">Automated question generation based on job requirements</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">Proctored assessment with video recording</span>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -220,128 +391,396 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
 
             {assessmentType === 'custom' && (
               <div className="space-y-8">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-800 mb-2">Requirements:</h4>
-                  <ul className="list-disc pl-5 space-y-1 text-blue-700">
-                    <li>Exactly 10 MCQ questions required (currently {mcqQuestions.length}/10)</li>
-                    <li>Each MCQ must have exactly 4 options with 1 correct answer</li>
-                    <li>Exactly 5 voice questions required (currently {voiceQuestions.length}/5)</li>
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-5 shadow-sm">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <FontAwesomeIcon icon={faInfoCircle} className="text-blue-600" />
+                    </div>
+                    <h4 className="font-bold text-blue-800 text-lg">Requirements</h4>
+                  </div>
+                  <ul className="space-y-3">
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">Exactly 10 MCQ questions required (currently <span className="font-semibold">{mcqQuestions.length}/10</span>)</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">Each MCQ must have exactly 4 options with 1 correct answer</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FontAwesomeIcon icon={faCheck} className="text-blue-600 text-xs" />
+                      </div>
+                      <span className="text-blue-800">Exactly 5 voice questions required (currently <span className="font-semibold">{voiceQuestions.length}/5</span>)</span>
+                    </li>
                   </ul>
                 </div>
                 
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom MCQ Questions</h3>
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                      <p className="text-red-700 text-sm">{error}</p>
-                    </div>
-                  )}
-                  <div className="space-y-6">
-                    {mcqQuestions.map((question, qIndex) => (
-                      <div key={qIndex} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex justify-between items-start mb-3">
-                          <h4 className="font-medium text-gray-900">Question {qIndex + 1}</h4>
-                        </div>
-                        <div className="mb-3">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Question Text
-                          </label>
-                          <textarea
-                            value={question.question}
-                            onChange={(e) => updateMcqQuestion(qIndex, 'question', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                            rows="2"
-                            placeholder="Enter your question here..."
-                          />
-                        </div>
-                        <div className="mb-3">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Options (Exactly 4 required)
-                          </label>
-                          <div className="space-y-2">
-                            {question.options.map((option, oIndex) => (
-                              <div key={oIndex} className="flex items-center">
-                                <input
-                                  type="text"
-                                  value={option}
-                                  onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                  placeholder={`Option ${oIndex + 1}`}
-                                />
-                              </div>
-                            ))}
-                          </div>
+                {/* Excel File Upload Section */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                      <FontAwesomeIcon icon={faFileExcel} className="text-green-600" />
+                      Upload Questions from Excel File
+                    </h3>
+                    <p className="text-gray-600 text-sm mt-1">Upload your pre-prepared questions in Excel format</p>
+                  </div>
+                  <div className="p-6">
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-5 text-center">
+                      <div className="flex flex-col items-center justify-center gap-4">
+                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                          <FontAwesomeIcon icon={faFileExcel} className="text-2xl text-green-600" />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Correct Answer
-                          </label>
-                          <select
-                            value={question.correctAnswer}
-                            onChange={(e) => updateMcqQuestion(qIndex, 'correctAnswer', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                          >
-                            <option value="">Select correct answer</option>
-                            {question.options.map((option, index) => (
-                              <option key={index} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
+                          <h4 className="font-bold text-gray-900 text-lg mb-2">Upload Excel Template</h4>
+                          <p className="text-gray-600 mb-4 max-w-md mx-auto">
+                            Upload your questions from our Excel template. The file should contain 10 MCQ questions and 5 voice questions.
+                          </p>
                         </div>
+                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md">
+                          <label className="flex-1 relative">
+                            <input
+                              type="file"
+                              accept=".xlsx"
+                              onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  handleExcelFileUpload(file);
+                                }
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              disabled={isProcessing}
+                            />
+                            <div className={`px-6 py-3 rounded-lg font-medium text-white transition-all duration-200 flex items-center justify-center gap-2 ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 shadow-md hover:shadow-lg cursor-pointer'}`}>
+                              <FontAwesomeIcon icon={isProcessing ? faSpinner : faUpload} spin={isProcessing} />
+                              {isProcessing ? 'Processing...' : 'Choose File'}
+                            </div>
+                          </label>
+                          <a 
+                            href="#" 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              // TODO: Add download template functionality
+                              alert('Template download would be implemented here');
+                            }}
+                            className="px-6 py-3 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors duration-200 flex items-center justify-center gap-2"
+                          >
+                            <FontAwesomeIcon icon={faDownload} />
+                            Download Template
+                          </a>
+                        </div>
+                        {excelFile && (
+                          <div className="mt-3 text-sm text-gray-600 flex items-center gap-2">
+                            <FontAwesomeIcon icon={faCheckCircle} className="text-green-500" />
+                            Selected: {excelFile.name}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                      <FontAwesomeIcon icon={faList} className="text-blue-600" />
+                      Custom MCQ Questions
+                    </h3>
+                    <p className="text-gray-600 text-sm mt-1">Create 10 multiple choice questions with 4 options each</p>
+                  </div>
+                  <div className="p-6">
+                    {error && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                        <div className="flex items-center gap-2">
+                          <FontAwesomeIcon icon={faExclamationTriangle} className="text-red-600" />
+                          <p className="text-red-700 font-medium">Error</p>
+                        </div>
+                        <p className="text-red-700 text-sm mt-2">{error}</p>
+                      </div>
+                    )}
+                    <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                      {mcqQuestions.map((question, qIndex) => (
+                        <div key={qIndex} className="border border-gray-200 rounded-lg p-5 bg-gray-50 hover:bg-white transition-colors duration-200">
+                          <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-200">
+                            <h4 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                <span className="text-blue-700 font-semibold text-sm">{qIndex + 1}</span>
+                              </div>
+                              Question {qIndex + 1}
+                            </h4>
+                          </div>
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                              <FontAwesomeIcon icon={faQuestionCircle} className="text-blue-500" />
+                              Question Text
+                            </label>
+                            <textarea
+                              value={question.question}
+                              onChange={(e) => updateMcqQuestion(qIndex, 'question', e.target.value)}
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                              rows="3"
+                              placeholder="Enter your question here..."
+                            />
+                          </div>
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                              <FontAwesomeIcon icon={faList} className="text-blue-500" />
+                              Options (Exactly 4 required)
+                            </label>
+                            <div className="space-y-3">
+                              {question.options.map((option, oIndex) => (
+                                <div key={oIndex} className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-gray-700 font-medium text-sm">{String.fromCharCode(65 + oIndex)}</span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={option}
+                                    onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
+                                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                                    placeholder={`Option ${String.fromCharCode(65 + oIndex)}...`}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                              <FontAwesomeIcon icon={faCheckCircle} className="text-green-500" />
+                              Correct Answer
+                            </label>
+                            <select
+                              value={question.correctAnswer}
+                              onChange={(e) => updateMcqQuestion(qIndex, 'correctAnswer', e.target.value)}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                            >
+                              <option value="">Select correct answer</option>
+                              {question.options.map((option, index) => (
+                                <option key={index} value={option}>
+                                  {String.fromCharCode(65 + index)}. {option}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom Voice Questions</h3>
-                  <div className="space-y-4">
-                    {voiceQuestions.map((question, index) => (
-                      <div key={index} className="flex items-start">
-                        <div className="flex-1 mr-3">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Question {index + 1}
-                          </label>
-                          <textarea
-                            value={question}
-                            onChange={(e) => updateVoiceQuestion(index, e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                            rows="2"
-                            placeholder="Enter your voice question here..."
-                          />
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                      <FontAwesomeIcon icon={faMicrophone} className="text-blue-600" />
+                      Custom Voice Questions
+                    </h3>
+                    <p className="text-gray-600 text-sm mt-1">Create 5 voice interview questions</p>
+                  </div>
+                  <div className="p-6">
+                    <div className="space-y-5">
+                      {voiceQuestions.map((question, index) => (
+                        <div key={index} className="flex items-start gap-4 p-4 rounded-lg border border-gray-200 bg-gray-50 hover:bg-white transition-colors duration-200">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
+                            <span className="text-blue-700 font-semibold text-sm">{index + 1}</span>
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Voice Question {index + 1}
+                            </label>
+                            <textarea
+                              value={question}
+                              onChange={(e) => updateVoiceQuestion(index, e.target.value)}
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                              rows="3"
+                              placeholder="Enter your voice question here..."
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-4 mt-8 pt-6 border-t border-gray-200">
+              <motion.button
+                onClick={onClose}
+                className="px-6 py-3 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors duration-200 flex items-center gap-2"
+                disabled={isSubmitting}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <FontAwesomeIcon icon={faTimes} />
+                Cancel
+              </motion.button>
+              {assessmentType === 'custom' && (
+                <motion.button
+                  onClick={() => setShowPreviewModal(true)}
+                  className="px-6 py-3 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors duration-200 flex items-center gap-2"
+                  disabled={isSubmitting}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <FontAwesomeIcon icon={faEye} />
+                  Preview
+                </motion.button>
+              )}
+              <motion.button
+                onClick={handleSubmit}
+                className={`px-6 py-3 rounded-lg font-medium text-white transition-all duration-200 flex items-center gap-2 ${
+                  isSubmitting 
+                    ? 'bg-blue-400 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 shadow-md hover:shadow-lg'
+                }`}
+                disabled={isSubmitting}
+                whileHover={{ scale: isSubmitting ? 1 : 1.02 }}
+                whileTap={{ scale: isSubmitting ? 1 : 0.98 }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                    Creating Assessment...
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faPaperPlane} />
+                    {assessmentType === 'ai' ? 'Generate AI Assessment' : 'Create Custom Assessment'}
+                  </>
+                )}
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+      <PreviewModal 
+        show={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        mcqQuestions={mcqQuestions}
+        voiceQuestions={voiceQuestions}
+      />
+    </AnimatePresence>
+  );
+};
+
+// Preview Modal Component
+const PreviewModal = ({ show, onClose, mcqQuestions, voiceQuestions }) => {
+  if (!show) return null;
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <motion.div
+          className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto"
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        >
+          <div className="p-6 md:p-8">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Assessment Preview</h2>
+                <p className="text-gray-600 mt-1">Review your questions before submitting</p>
+              </div>
+              <button 
+                onClick={onClose}
+                className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors duration-200"
+              >
+                <FontAwesomeIcon icon={faTimes} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-8">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faList} className="text-blue-600" />
+                    MCQ Questions ({mcqQuestions.length})
+                  </h3>
+                </div>
+                <div className="p-6">
+                  <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                    {mcqQuestions.map((question, qIndex) => (
+                      <div key={qIndex} className="border border-gray-200 rounded-lg p-5 bg-gray-50">
+                        <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-200">
+                          <h4 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                              <span className="text-blue-700 font-semibold text-sm">{qIndex + 1}</span>
+                            </div>
+                            Question {qIndex + 1}
+                          </h4>
+                        </div>
+                        <div className="mb-4">
+                          <p className="text-gray-800 font-medium mb-3">{question.question || <span className="text-gray-400 italic">No question text provided</span>}</p>
+                        </div>
+                        <div className="mb-4">
+                          <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            <FontAwesomeIcon icon={faList} className="text-blue-500" />
+                            Options
+                          </h5>
+                          <div className="space-y-2">
+                            {question.options.map((option, oIndex) => (
+                              <div key={oIndex} className="flex items-center gap-3 p-2 rounded bg-white border border-gray-200">
+                                <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                  <span className="text-gray-700 font-medium text-xs">{String.fromCharCode(65 + oIndex)}</span>
+                                </div>
+                                <span className={question.correctAnswer === option ? "font-semibold text-green-600" : "text-gray-700"}>
+                                  {option || <span className="text-gray-400 italic">No option text provided</span>}
+                                  {question.correctAnswer === option && (
+                                    <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Correct</span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
-            )}
 
-            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-200">
-              <button
-                onClick={onClose}
-                className="btn-secondary px-6 py-2"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="btn-primary px-6 py-2"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    {assessmentType === 'ai' ? 'Generate AI Assessment' : 'Create Custom Assessment'}
-                  </>
-                )}
-              </button>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faMicrophone} className="text-blue-600" />
+                    Voice Questions ({voiceQuestions.length})
+                  </h3>
+                </div>
+                <div className="p-6">
+                  <div className="space-y-5">
+                    {voiceQuestions.map((question, index) => (
+                      <div key={index} className="flex items-start gap-4 p-4 rounded-lg border border-gray-200 bg-gray-50">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
+                          <span className="text-blue-700 font-semibold text-sm">{index + 1}</span>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-gray-800 font-medium">
+                            {question || <span className="text-gray-400 italic">No question text provided</span>}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-4 pt-4 border-t border-gray-200">
+                <motion.button
+                  onClick={onClose}
+                  className="px-6 py-3 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors duration-200 flex items-center gap-2"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                  Close Preview
+                </motion.button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -405,6 +844,7 @@ function CandidateTable() {
   const [showGenerationModal, setShowGenerationModal] = useState(false);
   const [showCustomAssessmentModal, setShowCustomAssessmentModal] = useState(false);
   const [currentCandidate, setCurrentCandidate] = useState(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [generationStatus, setGenerationStatus] = useState({
     loading: false,
     error: null,
@@ -2915,52 +3355,64 @@ function CandidateTable() {
         <AnimatePresence>
           {showGenerationModal && (
             <motion.div
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
               <motion.div
-                className="card-glass max-w-md w-full p-6 text-center"
+                className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center"
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
               >
                 {generationStatus.loading && (
                   <>
-                    <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Preparing Assessment</h3>
-                    <p className="text-gray-600">{generationStatus.message || 'Processing...'}</p>
+                    <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                      <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-3">Preparing Assessment</h3>
+                    <p className="text-gray-600 mb-6">{generationStatus.message || 'Processing your request...'}</p>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full animate-pulse" style={{width: '75%'}}></div>
+                    </div>
                   </>
                 )}
                 {generationStatus.error && (
                   <>
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <FontAwesomeIcon icon={faExclamationTriangle} className="text-2xl text-red-600" />
+                    <div className="w-20 h-20 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                      <FontAwesomeIcon icon={faExclamationTriangle} className="text-3xl text-red-600" />
                     </div>
-                    <h3 className="text-xl font-semibold text-red-600 mb-2">Error</h3>
-                    <p className="text-gray-600 mb-4">{generationStatus.error}</p>
-                    <button 
-                      className="btn-secondary"
+                    <h3 className="text-2xl font-bold text-red-600 mb-3">Error Occurred</h3>
+                    <p className="text-gray-600 mb-6">{generationStatus.error}</p>
+                    <motion.button 
+                      className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 mx-auto"
                       onClick={() => setShowGenerationModal(false)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
+                      <FontAwesomeIcon icon={faTimes} />
                       Close
-                    </button>
+                    </motion.button>
                   </>
                 )}
                 {generationStatus.success && (
                   <>
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <FontAwesomeIcon icon={faCheckCircle} className="text-2xl text-green-600" />
+                    <div className="w-20 h-20 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                      <FontAwesomeIcon icon={faCheckCircle} className="text-3xl text-green-600" />
                     </div>
-                    <h3 className="text-xl font-semibold text-green-600 mb-2">Success!</h3>
-                    <p className="text-gray-600 mb-4">{generationStatus.message}</p>
-                    <button 
-                      className="btn-primary"
+                    <h3 className="text-2xl font-bold text-green-600 mb-3">Success!</h3>
+                    <p className="text-gray-600 mb-6">{generationStatus.message}</p>
+                    <motion.button 
+                      className="px-6 py-3 bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white rounded-lg font-medium transition-all duration-200 flex items-center gap-2 mx-auto shadow-md hover:shadow-lg"
                       onClick={() => setShowGenerationModal(false)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
+                      <FontAwesomeIcon icon={faCheck} />
                       Got it!
-                    </button>
+                    </motion.button>
                   </>
                 )}
               </motion.div>
