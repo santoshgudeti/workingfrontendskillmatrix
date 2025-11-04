@@ -11,7 +11,8 @@ import {
   faIdBadge, faCalendarAlt, faUsers,
   faSpinner, faCheckCircle, faExclamationTriangle,
   faTimes, faFilter, faSort, faDesktop, faPlayCircle,
-  faMicrophone,faChevronLeft,faChevronRight,faFilePdf
+  faMicrophone,faChevronLeft,faChevronRight,faFilePdf,
+  faRobot, faUserEdit // Add these new icons
 } from "@fortawesome/free-solid-svg-icons";
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -20,6 +21,334 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { io } from "socket.io-client";
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import { axiosInstance } from "../../axiosUtils";
+
+// Add this new component for the custom assessment modal
+const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
+  const [assessmentType, setAssessmentType] = useState('ai'); // 'ai' or 'custom'
+  const [mcqQuestions, setMcqQuestions] = useState([
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' },
+    { question: '', options: ['', '', '', ''], correctAnswer: '' }
+  ]);
+  const [voiceQuestions, setVoiceQuestions] = useState(['', '', '', '', '']);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!show) return null;
+
+  // Removed add/remove functions as we need exactly 10 MCQ questions
+
+  const updateMcqQuestion = (index, field, value) => {
+    const newQuestions = [...mcqQuestions];
+    if (field === 'options') {
+      newQuestions[index].options = value;
+    } else {
+      newQuestions[index][field] = value;
+    }
+    setMcqQuestions(newQuestions);
+  };
+
+  // Removed add/remove option functions as we need exactly 4 options per MCQ
+
+  const updateOption = (questionIndex, optionIndex, value) => {
+    const newQuestions = [...mcqQuestions];
+    newQuestions[questionIndex].options[optionIndex] = value;
+    setMcqQuestions(newQuestions);
+  };
+
+  // Removed add/remove functions as we need exactly 5 voice questions
+
+  const updateVoiceQuestion = (index, value) => {
+    const newQuestions = [...voiceQuestions];
+    newQuestions[index] = value;
+    setVoiceQuestions(newQuestions);
+  };
+
+  const validateCustomQuestions = () => {
+    // Validate exact number of MCQ questions (must be 10)
+    if (mcqQuestions.length !== 10) {
+      setError('Exactly 10 MCQ questions are required. Please add or remove questions to meet this requirement.');
+      return false;
+    }
+    
+    // Validate each MCQ question
+    for (let i = 0; i < mcqQuestions.length; i++) {
+      const q = mcqQuestions[i];
+      if (!q.question.trim()) {
+        setError(`MCQ Question ${i + 1}: Question text is required`);
+        return false;
+      }
+      
+      // Validate exactly 4 options
+      if (q.options.length !== 4) {
+        setError(`MCQ Question ${i + 1}: Exactly 4 options are required`);
+        return false;
+      }
+      
+      if (q.options.some(opt => !opt.trim())) {
+        setError(`MCQ Question ${i + 1}: All options must be filled`);
+        return false;
+      }
+      if (!q.correctAnswer.trim()) {
+        setError(`MCQ Question ${i + 1}: Correct answer is required`);
+        return false;
+      }
+      if (!q.options.includes(q.correctAnswer)) {
+        setError(`MCQ Question ${i + 1}: Correct answer must match one of the options`);
+        return false;
+      }
+    }
+
+    // Validate exact number of voice questions (must be 5)
+    if (voiceQuestions.length !== 5) {
+      setError('Exactly 5 voice questions are required. Please add or remove questions to meet this requirement.');
+      return false;
+    }
+
+    // Validate voice questions
+    for (let i = 0; i < voiceQuestions.length; i++) {
+      if (!voiceQuestions[i].trim()) {
+        setError(`Voice Question ${i + 1}: Question text is required`);
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (assessmentType === 'ai') {
+      // For AI assessment, just call the existing sendTestLink function
+      onSubmit('ai');
+      return;
+    }
+
+    // For custom assessment, validate and submit custom questions
+    if (!validateCustomQuestions()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      await onSubmit('custom', {
+        customMcqQuestions: mcqQuestions,
+        customVoiceQuestions: voiceQuestions.map(q => ({ question: q }))
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to create custom assessment');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <motion.div
+          className="card-glass max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        >
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Create Assessment</h2>
+              <button 
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex border-b border-gray-200">
+                <button
+                  className={`py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
+                    assessmentType === 'ai'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                  onClick={() => setAssessmentType('ai')}
+                >
+                  <FontAwesomeIcon icon={faRobot} className="mr-2" />
+                  AI Generated Assessment
+                </button>
+                <button
+                  className={`py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
+                    assessmentType === 'custom'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                  onClick={() => setAssessmentType('custom')}
+                >
+                  <FontAwesomeIcon icon={faUserEdit} className="mr-2" />
+                  Custom Assessment
+                </button>
+              </div>
+            </div>
+
+            {assessmentType === 'ai' && (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FontAwesomeIcon icon={faRobot} className="text-2xl text-blue-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Generated Assessment</h3>
+                <p className="text-gray-600 mb-6">
+                  Automatically generate 10 MCQ questions and 5 voice questions based on the candidate's resume and job description.
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+                  <h4 className="font-semibold text-blue-800 mb-2">What to expect:</h4>
+                  <ul className="list-disc pl-5 space-y-1 text-blue-700">
+                    <li>10 technical and behavioral MCQ questions</li>
+                    <li>5 voice interview questions</li>
+                    <li>Automated question generation based on job requirements</li>
+                    <li>Proctored assessment with video recording</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {assessmentType === 'custom' && (
+              <div className="space-y-8">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-800 mb-2">Requirements:</h4>
+                  <ul className="list-disc pl-5 space-y-1 text-blue-700">
+                    <li>Exactly 10 MCQ questions required (currently {mcqQuestions.length}/10)</li>
+                    <li>Each MCQ must have exactly 4 options with 1 correct answer</li>
+                    <li>Exactly 5 voice questions required (currently {voiceQuestions.length}/5)</li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom MCQ Questions</h3>
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                      <p className="text-red-700 text-sm">{error}</p>
+                    </div>
+                  )}
+                  <div className="space-y-6">
+                    {mcqQuestions.map((question, qIndex) => (
+                      <div key={qIndex} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex justify-between items-start mb-3">
+                          <h4 className="font-medium text-gray-900">Question {qIndex + 1}</h4>
+                        </div>
+                        <div className="mb-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Question Text
+                          </label>
+                          <textarea
+                            value={question.question}
+                            onChange={(e) => updateMcqQuestion(qIndex, 'question', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            rows="2"
+                            placeholder="Enter your question here..."
+                          />
+                        </div>
+                        <div className="mb-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Options (Exactly 4 required)
+                          </label>
+                          <div className="space-y-2">
+                            {question.options.map((option, oIndex) => (
+                              <div key={oIndex} className="flex items-center">
+                                <input
+                                  type="text"
+                                  value={option}
+                                  onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder={`Option ${oIndex + 1}`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Correct Answer
+                          </label>
+                          <select
+                            value={question.correctAnswer}
+                            onChange={(e) => updateMcqQuestion(qIndex, 'correctAnswer', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="">Select correct answer</option>
+                            {question.options.map((option, index) => (
+                              <option key={index} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom Voice Questions</h3>
+                  <div className="space-y-4">
+                    {voiceQuestions.map((question, index) => (
+                      <div key={index} className="flex items-start">
+                        <div className="flex-1 mr-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Question {index + 1}
+                          </label>
+                          <textarea
+                            value={question}
+                            onChange={(e) => updateVoiceQuestion(index, e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            rows="2"
+                            placeholder="Enter your voice question here..."
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-200">
+              <button
+                onClick={onClose}
+                className="btn-secondary px-6 py-2"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="btn-primary px-6 py-2"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    {assessmentType === 'ai' ? 'Generate AI Assessment' : 'Create Custom Assessment'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+};
 
 // Enhanced Status Badge Component
 const CandidateStatusBadge = ({ session, assessmentSessionId, candidateDecisions }) => {
@@ -74,6 +403,8 @@ function CandidateTable() {
   const [loading, setLoading] = useState(true);
   const [testScores, setTestScores] = useState([]);
   const [showGenerationModal, setShowGenerationModal] = useState(false);
+  const [showCustomAssessmentModal, setShowCustomAssessmentModal] = useState(false);
+  const [currentCandidate, setCurrentCandidate] = useState(null);
   const [generationStatus, setGenerationStatus] = useState({
     loading: false,
     error: null,
@@ -489,6 +820,147 @@ function CandidateTable() {
         message: null,
         testLink: error.response?.data?.testLink
       });
+    }
+  };
+
+  // New function to handle custom assessment creation
+  const createCustomAssessment = async (candidateData, customQuestions) => {
+    setShowGenerationModal(true);
+    setGenerationStatus({
+      loading: true,
+      error: null,
+      success: false,
+      message: 'Creating custom assessment...'
+    });
+    
+    try {
+      const { customMcqQuestions, customVoiceQuestions } = customQuestions;
+      
+      setGenerationStatus(prev => ({
+        ...prev,
+        message: 'Sending custom assessment email...'
+      }));
+      
+      const sessionResponse = await axiosInstance.post(
+        '/api/create-custom-assessment',
+        {
+          candidateEmail: candidateData.email,
+          jobTitle: candidateData.jobTitle,
+          resumeId: candidateData.resumeId,
+          jobDescriptionId: candidateData.jdId,
+          customMcqQuestions,
+          customVoiceQuestions
+        }
+      );
+      
+      if (!sessionResponse.data.success) {
+        throw new Error(sessionResponse.data.error || 'Failed to create custom assessment');
+      }
+      
+      setGenerationStatus({
+        loading: false,
+        error: null,
+        success: true,
+        message: `Custom assessment sent to ${candidateData.email}`,
+        testLink: sessionResponse.data.testLink
+      });
+      
+      // Show success toast
+      toast.success(`Custom assessment successfully sent to ${candidateData.email}!`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      setTimeout(() => {
+        setShowGenerationModal(false);
+        setShowCustomAssessmentModal(false);
+        // Refresh candidate data
+        const fetchCandidates = async () => {
+          try {
+            const response = await axiosInstance.get("/api/candidate-filtering");
+            const data = response.data;
+            const uniqueCandidates = data.filter((member, index, self) => {
+              return (
+                index ===
+                self.findIndex(
+                  (c) =>
+                    c.resumeId === member.resumeId &&
+                    c.jobDescriptionId === member.jobDescriptionId
+                )
+              );
+            }).map((member) => ({
+              ...member,
+              matchingResult: member.matchingResult?.[0] ? [{
+                "Resume Data": member.matchingResult[0]["Resume Data"],
+                Analysis: {
+                  "Matching Score": member.matchingResult[0].Analysis?.["Matching Score"] || 0,
+                  "Matched Skills": member.matchingResult[0].Analysis?.["Matched Skills"] || [],
+                  "Unmatched Skills": member.matchingResult[0].Analysis?.["Unmatched Skills"] || [],
+                  "Matched Skills Percentage": member.matchingResult[0].Analysis?.["Matched Skills Percentage"] || 0,
+                  "Unmatched Skills Percentage": member.matchingResult[0].Analysis?.["Unmatched Skills Percentage"] || 0,
+                  Strengths: member.matchingResult[0].Analysis?.Strengths || [],
+                  Recommendations: member.matchingResult[0].Analysis?.Recommendations || [],
+                  "Required Industrial Experience": member.matchingResult[0].Analysis?.["Required Industrial Experience"] || "N/A",
+                  "Candidate Industrial Experience": member.matchingResult[0].Analysis?.["Candidate Industrial Experience"] || "N/A",
+                  "Required Domain Experience": member.matchingResult[0].Analysis?.["Required Domain Experience"] || "N/A",
+                  "Candidate Domain Experience": member.matchingResult[0].Analysis?.["Candidate Domain Experience"] || "N/A",
+                  // New fields
+                  "Experience Threshold Compliance": member.matchingResult[0].Analysis?.["Experience Threshold Compliance"] || "N/A",
+                  "Recent Experience Relevance": member.matchingResult[0].Analysis?.["Recent Experience Relevance"] || "N/A",
+                  "Analysis Summary": member.matchingResult[0]["Analysis Summary"] || member.matchingResult[0].Analysis?.["Analysis Summary"] || "N/A"
+                }
+              }] : []
+            }));
+            setCandidates(uniqueCandidates);
+            setMembers(uniqueCandidates);
+            setFilteredMembers(uniqueCandidates);
+          } catch (error) {
+            console.error("Error fetching candidate data:", error.message);
+          }
+        };
+        fetchCandidates();
+      }, 10000);
+    } catch (error) {
+      console.error('Custom assessment error:', error);
+      let errorMessage = 'Failed to create custom assessment';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      setGenerationStatus({
+        loading: false,
+        error: errorMessage,
+        success: false,
+        message: null,
+        testLink: error.response?.data?.testLink
+      });
+    }
+  };
+
+  // New function to handle assessment type selection
+  const handleAssessmentSelection = (candidateData) => {
+    setCurrentCandidate(candidateData);
+    setShowCustomAssessmentModal(true);
+  };
+
+  // New function to handle assessment submission from modal
+  const handleAssessmentSubmit = async (type, customQuestions = null) => {
+    if (type === 'ai') {
+      // Call the existing sendTestLink function
+      await sendTestLink(
+        currentCandidate.email,
+        currentCandidate.jobTitle,
+        currentCandidate.resumeId,
+        currentCandidate.jdId
+      );
+    } else if (type === 'custom' && customQuestions) {
+      // Call the new createCustomAssessment function
+      await createCustomAssessment(currentCandidate, customQuestions);
     }
   };
 
@@ -1845,12 +2317,12 @@ function CandidateTable() {
         {!session || session.status === 'pending' ? (
           <motion.button
             className="btn-primary px-3 py-2 text-xs font-medium md:px-4 md:py-2 md:text-sm"
-            onClick={() => sendTestLink(
+            onClick={() => handleAssessmentSelection({
               email,
-              resumeData["Job Title"],
-              result.resumeId?._id,
-              result.jobDescriptionId?._id
-            )}
+              jobTitle: resumeData["Job Title"],
+              resumeId: result.resumeId?._id,
+              jdId: result.jobDescriptionId?._id
+            })}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
@@ -2430,6 +2902,71 @@ function CandidateTable() {
             </div>
           </motion.div>
         </motion.div>
+        
+        {/* Custom Assessment Modal */}
+        <CustomAssessmentModal 
+          show={showCustomAssessmentModal}
+          onClose={() => setShowCustomAssessmentModal(false)}
+          candidateData={currentCandidate}
+          onSubmit={handleAssessmentSubmit}
+        />
+        
+        {/* Assessment Generation Modal */}
+        <AnimatePresence>
+          {showGenerationModal && (
+            <motion.div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.div
+                className="card-glass max-w-md w-full p-6 text-center"
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              >
+                {generationStatus.loading && (
+                  <>
+                    <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Preparing Assessment</h3>
+                    <p className="text-gray-600">{generationStatus.message || 'Processing...'}</p>
+                  </>
+                )}
+                {generationStatus.error && (
+                  <>
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <FontAwesomeIcon icon={faExclamationTriangle} className="text-2xl text-red-600" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-red-600 mb-2">Error</h3>
+                    <p className="text-gray-600 mb-4">{generationStatus.error}</p>
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => setShowGenerationModal(false)}
+                    >
+                      Close
+                    </button>
+                  </>
+                )}
+                {generationStatus.success && (
+                  <>
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <FontAwesomeIcon icon={faCheckCircle} className="text-2xl text-green-600" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-green-600 mb-2">Success!</h3>
+                    <p className="text-gray-600 mb-4">{generationStatus.message}</p>
+                    <button 
+                      className="btn-primary"
+                      onClick={() => setShowGenerationModal(false)}
+                    >
+                      Got it!
+                    </button>
+                  </>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         {/* 🔥 NEW: Floating Action Button for Bulk Merged Document Download */}
         <AnimatePresence>
