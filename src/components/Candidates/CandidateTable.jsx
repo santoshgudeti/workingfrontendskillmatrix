@@ -461,12 +461,8 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
                             </div>
                           </label>
                           <a 
-                            href="#" 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              // TODO: Add download template functionality
-                              alert('Template download would be implemented here');
-                            }}
+                            href="/src/assets/templates/Recruitment_Assessment_Template.xlsx" 
+                            download="Recruitment_Assessment_Template.xlsx"
                             className="px-6 py-3 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors duration-200 flex items-center justify-center gap-2"
                           >
                             <FontAwesomeIcon icon={faDownload} />
