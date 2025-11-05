@@ -13,7 +13,8 @@ import {
   faTimes, faFilter, faSort, faDesktop, faPlayCircle,
   faMicrophone,faChevronLeft,faChevronRight,faFilePdf,
   faRobot, faUserEdit, faInfoCircle, faCheck, faQuestionCircle, faList, faPaperPlane, 
-  faFileExcel, faUpload
+  faFileExcel, faUpload, faMobile, faEnvelope, faShieldAlt,
+  faChartLine, faLightbulb, faUserClock, faClipboardList, faCircle,faTools 
 } from "@fortawesome/free-solid-svg-icons";
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -268,8 +269,15 @@ const CustomAssessmentModal = ({ show, onClose, candidateData, onSubmit }) => {
           setMcqQuestions(formattedMcqQuestions);
           setVoiceQuestions(formattedVoiceQuestions);
           
-          // Show success message
-          alert(`Successfully loaded ${formattedMcqQuestions.length} MCQ questions and ${formattedVoiceQuestions.length} voice questions from the Excel file.`);
+          // Show success message with toast instead of alert
+          toast.success(`Successfully loaded ${formattedMcqQuestions.length} MCQ questions and ${formattedVoiceQuestions.length} voice questions from the Excel file.`, {
+            position: "top-right",
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
           // Automatically show preview after successful upload
           setShowPreviewModal(true);
         } catch (err) {
@@ -1195,6 +1203,17 @@ function CandidateTable() {
         draggable: true,
       });
       setTimeout(() => {
+          // Show success message with toast instead of alert
+          toast.success(`Successfully loaded ${formattedMcqQuestions.length} MCQ questions and ${formattedVoiceQuestions.length} voice questions from the Excel file.`, {
+            position: "top-right",
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+          // Automatically show preview after successful upload
+          setShowPreviewModal(true);
         setShowGenerationModal(false);
         const fetchCandidates = async () => {
           try {
@@ -3060,243 +3079,433 @@ function CandidateTable() {
           exit={{ opacity: 0, height: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <td colSpan="12" className="px-0 py-0">
+          <td colSpan="14" className="px-0 py-0">
             <motion.div 
-              className="bg-gradient-to-br from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100"
+              className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 shadow-sm"
               initial={{ y: -20 }}
               animate={{ y: 0 }}
               transition={{ duration: 0.3, delay: 0.1 }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
-                {/* Contact Information - Compact Design */}
-                <div className="bg-white p-3 rounded-md border border-gray-200">
-                  <h6 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-1 mb-2">
-                    Contact Information
-                  </h6>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700 text-xs min-w-[80px]">Mobile:</span>
-                      <span className="text-gray-900 text-xs">{resumeData.mobile_number || "N/A"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700 text-xs min-w-[80px]">Email:</span>
-                      {resumeData.email ? (
-                        <span className="badge badge-primary text-xs px-2 py-0.5">
-                          {resumeData.email}
-                        </span>
-                      ) : (
-                        <span className="text-gray-500 text-xs">N/A</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700 text-xs min-w-[80px]">Consent:</span>
-                      {result.candidateConsent?.allowedToShare ? (
-                        <span className="badge badge-success text-xs px-2 py-0.5">
-                          Shared
-                        </span>
-                      ) : (
-                        <span className="badge badge-warning text-xs px-2 py-0.5">
-                          Not Shared
-                        </span>
-                      )}
-                    </div>
+              <div className="flex flex-col gap-3 max-w-4xl mx-auto">
+                {/* Contact Information Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faUserTie} />
+                      Contact Information
+                    </h3>
                   </div>
-                </div>
-                
-                {/* Professional Details - Compact Design */}
-                <div className="bg-white p-3 rounded-md border border-gray-200">
-                  <h6 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-1 mb-2">
-                    Professional Details
-                  </h6>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700 text-xs min-w-[80px]">Designation:</span>
-                      <span className="text-gray-900 text-xs">
-                        {(Array.isArray(resumeData.designation) 
-                          ? resumeData.designation.join(", ") 
-                          : resumeData.designation) || "N/A"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700 text-xs min-w-[80px]">Degree:</span>
-                      <span className="text-gray-900 text-xs">
-                        {(Array.isArray(resumeData.degree) 
-                          ? resumeData.degree.join(", ") 
-                          : resumeData.degree) || "N/A"}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="font-medium text-gray-700 text-xs">Certifications:</span>
-                      <div className="ml-0 text-xs">
-                        {renderListWithExpand(resumeData.certifications || [], index, "certifications")}
+                  <div className="p-3">
+                    <div className="space-y-3">
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">
+                          <FontAwesomeIcon icon={faMobile} className="text-blue-600 text-xs" />
+                        </div>
+                        <div className="ml-2">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Mobile</p>
+                          <p className="text-xs font-medium text-gray-900 mt-1">{resumeData.mobile_number || "N/A"}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">
+                          <FontAwesomeIcon icon={faEnvelope} className="text-blue-600 text-xs" />
+                        </div>
+                        <div className="ml-2">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</p>
+                          <p className="text-xs font-medium text-gray-900 mt-1 break-all">{resumeData.email || "N/A"}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">
+                          <FontAwesomeIcon icon={faShieldAlt} className="text-blue-600 text-xs" />
+                        </div>
+                        <div className="ml-2">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Consent Status</p>
+                          <div className="mt-1">
+                            {result.candidateConsent?.allowedToShare ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <FontAwesomeIcon icon={faCheckCircle} className="mr-1" />
+                                Shared
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                                Not Shared
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
                 
-                {/* Skills - Compact Design */}
-                <div className="bg-white p-3 rounded-md border border-gray-200">
-                  <h6 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-1 mb-2">
-                    Skills
-                  </h6>
-                  <div className="flex flex-wrap gap-1">
-                    {resumeData.skills?.length ? (
-                      resumeData.skills.map((skill, i) => (
-                        <span key={i} className="badge badge-info text-xs px-2 py-0.5">
-                          {skill}
-                        </span>
-                      ))
+                {/* Professional Details Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-indigo-500 to-purple-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faBriefcase} />
+                      Professional Details
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Designation</p>
+                        <p className="text-xs font-medium text-gray-900 mt-1">
+                          {(Array.isArray(resumeData.designation) 
+                            ? resumeData.designation.join(", ") 
+                            : resumeData.designation) || "N/A"}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Degree</p>
+                        <p className="text-xs font-medium text-gray-900 mt-1">
+                          {(Array.isArray(resumeData.degree) 
+                            ? resumeData.degree.join(", ") 
+                            : resumeData.degree) || "N/A"}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Certifications</p>
+                        <div className="mt-1">
+                          {resumeData.certifications?.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {resumeData.certifications.map((cert, i) => (
+                                <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                  {cert}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500">No certifications listed</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Skills Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-purple-500 to-pink-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faTools} />
+                      Skills
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    <div className="flex flex-wrap gap-1">
+                      {resumeData.skills?.length ? (
+                        resumeData.skills.map((skill, i) => (
+                          <span key={i} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-purple-100 to-pink-100 text-purple-800 border border-purple-200">
+                            {skill}
+                          </span>
+                        ))
+                      ) : (
+                        <p className="text-xs text-gray-500">No skills listed</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Previous Companies Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-green-500 to-teal-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faBuilding} />
+                      Previous Companies
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    {resumeData.company_names?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {resumeData.company_names.map((company, i) => (
+                          <span key={i} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-green-100 to-teal-100 text-green-800 border border-green-200">
+                            {company}
+                          </span>
+                        ))}
+                      </div>
                     ) : (
-                      <span className="text-gray-500 text-xs">No skills available</span>
+                      <p className="text-xs text-gray-500">No previous companies listed</p>
                     )}
                   </div>
                 </div>
                 
-                {/* Previous Companies - Compact Design */}
-                <div className="bg-white p-3 rounded-md border border-gray-200">
-                  <h6 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-1 mb-2">
-                    Previous Companies
-                  </h6>
-                  <div className="text-xs compact-list">
-                    {renderListWithExpand(resumeData.company_names || [], index, "company_names")}
+                {/* Experience Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faGraduationCap} />
+                      Work Experience
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    {resumeData.total_experience?.length ? (
+                      <div className="space-y-3">
+                        {resumeData.total_experience.map((exp, i) => (
+                          <div key={i} className="border border-gray-200 rounded-md p-3 hover:bg-gray-50 transition-colors">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-900">{exp.role || "N/A"}</h4>
+                                <p className="text-xs text-gray-600 mt-1">{exp.company || "N/A"}</p>
+                              </div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                {exp.duration || "N/A"}
+                              </span>
+                            </div>
+                            
+                            {exp.responsibilities?.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Responsibilities</p>
+                                <ul className="mt-1 space-y-1">
+                                  {exp.responsibilities.slice(0, 3).map((resp, j) => (
+                                    <li key={j} className="flex items-start">
+                                      <FontAwesomeIcon icon={faCircle} className="text-gray-400 text-xs mt-1 mr-1 flex-shrink-0" />
+                                      <span className="text-xs text-gray-700">{resp}</span>
+                                    </li>
+                                  ))}
+                                  {exp.responsibilities.length > 3 && (
+                                    <li 
+                                      className="text-xs text-blue-600 font-medium cursor-pointer hover:text-blue-800"
+                                      onClick={() => toggleExpand(`${i}-${result._id}`, 'responsibilities')}
+                                    >
+                                      {expandedLists[`${i}-${result._id}-responsibilities`] 
+                                        ? "Show Less" 
+                                        : `+ ${exp.responsibilities.length - 3} more responsibilities`}
+                                    </li>
+                                  )}
+                                </ul>
+                                {expandedLists[`${i}-${result._id}-responsibilities`] && (
+                                  <ul className="mt-1 space-y-1">
+                                    {exp.responsibilities.slice(3).map((resp, j) => (
+                                      <li key={`${j}-expanded`} className="flex items-start">
+                                        <FontAwesomeIcon icon={faCircle} className="text-gray-400 text-xs mt-1 mr-1 flex-shrink-0" />
+                                        <span className="text-xs text-gray-700">{resp}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">No work experience listed</p>
+                    )}
                   </div>
                 </div>
-              </div>
-              
-              {/* View Recordings section moved to main table column */}
-              
-              {/* Voice Answers section moved to main table column */}
-              
-              {/* Experience Section - Compact Design */}
-              <div className="mt-2 bg-white p-3 rounded-md border border-gray-200">
-                <h6 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-1 mb-2">
-                  Experience
-                </h6>
-                <div className="space-y-2">
-                {resumeData.total_experience?.length ? (
-  resumeData.total_experience.map((exp, i) => (
-    <div key={i} className="experience-card p-2 rounded border border-gray-200">
-      <div className="experience-grid gap-2">
-        <div>
-          <div className="experience-detail">
-            <span className="experience-label text-xs">Role:</span>
-            <span className="experience-value text-xs">{exp.role || "N/A"}</span>
-          </div>
-          <div className="experience-detail">
-            <span className="experience-label text-xs">Company:</span>
-            <span className="experience-value text-xs">{exp.company || "N/A"}</span>
-          </div>
-          <div className="experience-detail">
-            <span className="experience-label text-xs">Duration:</span>
-            <span className="experience-value text-xs">{exp.duration || "N/A"}</span>
-          </div>
-        </div>
-        <div>
-          <div className="space-y-1">
-            <span className="experience-label text-xs">Responsibilities:</span>
-            <div className="ml-0 compact-list text-xs">
-              {renderListWithExpand(exp.responsibilities || [], index, `responsibilities-${i}`, 2)}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  ))
-) : (
-  <span className="text-gray-500 text-xs">No experience available</span>
-)}
-                </div>
-              </div>
-              
-              {/* Analysis Section - Compact Design */}
-              <div className="mt-2 bg-white p-3 rounded-md border border-gray-200">
-                <h6 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-1 mb-2">
-                  Analysis
-                </h6>
-                <div className="analysis-grid gap-1.5">
-                  {/* Skills Analysis */}
-                  <div className="space-y-2">
-                    <div className="space-y-1">
-                      <div>
-                        <span className="skill-analysis-title text-xs">Matched Skills:</span>
-                        <div className="ml-0 compact-list text-xs">
-                          {renderListWithExpand(analysis["Matched Skills"] || [], index, "matchedSkills")}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="skill-analysis-title text-xs">Unmatched Skills:</span>
-                        <div className="ml-0 compact-list text-xs">
-                          {renderListWithExpand(analysis["Unmatched Skills"] || [], index, "unmatchedSkills")}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="skill-analysis-title text-xs">Strengths:</span>
-                        <div className="ml-0 compact-list text-xs">
-                          {renderListWithExpand(analysis.Strengths || [], index, "strengths")}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 
-                  {/* Scores and Metrics */}
-                  <div className="space-y-2">
-                    <div className="bg-gradient-to-r from-green-50 to-blue-50 p-2 rounded border border-gray-200">
-                      <div className="space-y-1">
-                        <div className="analysis-metric">
-                          <span className="analysis-label text-xs">Matching Score:</span>
-                          <span className="analysis-value text-xs">{analysis["Matching Score"] || "N/A"}</span>
+                {/* Analysis Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-red-500 to-rose-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faChartLine} />
+                      Analysis
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    <div className="space-y-4">
+                      {/* Matching Score */}
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Matching Score</p>
+                          <span className="text-xs font-bold text-gray-900">{analysis["Matching Score"] || "N/A"}</span>
                         </div>
-                        <div className="analysis-metric">
-                          <span className="analysis-label text-xs">Matched Skills %:</span>
-                          <span className="analysis-value analysis-score-positive text-xs">{analysis["Matched Skills Percentage"] || 0}%</span>
-                        </div>
-                        <div className="analysis-metric">
-                          <span className="analysis-label text-xs">Unmatched Skills %:</span>
-                          <span className="analysis-value analysis-score-negative text-xs">{analysis["Unmatched Skills Percentage"] || 0}%</span>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div 
+                            className="bg-gradient-to-r from-red-500 to-rose-600 h-1.5 rounded-full" 
+                            style={{ width: `${analysis["Matching Score"] || 0}%` }}
+                          ></div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div>
-                      <span className="skill-analysis-title text-xs">Recommendations:</span>
-                      <div className="ml-0 compact-list text-xs">
-                        {renderListWithExpand(analysis.Recommendations || [], index, "recommendations")}
+                      
+                      {/* Skills Breakdown */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Skills Breakdown</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-green-50 rounded-md p-2 border border-green-200">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-medium text-green-800">Matched</span>
+                              <span className="text-xs font-bold text-green-900">{analysis["Matched Skills Percentage"] || 0}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                              <div 
+                                className="bg-green-500 h-1 rounded-full" 
+                                style={{ width: `${analysis["Matched Skills Percentage"] || 0}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                          
+                          <div className="bg-rose-50 rounded-md p-2 border border-rose-200">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-medium text-rose-800">Unmatched</span>
+                              <span className="text-xs font-bold text-rose-900">{analysis["Unmatched Skills Percentage"] || 0}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                              <div 
+                                className="bg-rose-500 h-1 rounded-full" 
+                                style={{ width: `${analysis["Unmatched Skills Percentage"] || 0}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Matched Skills */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Matched Skills</p>
+                        <div className="flex flex-wrap gap-1">
+                          {analysis["Matched Skills"]?.length ? (
+                            analysis["Matched Skills"].map((skill, i) => (
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {skill}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500">No matched skills</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Unmatched Skills */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Unmatched Skills</p>
+                        <div className="flex flex-wrap gap-1">
+                          {analysis["Unmatched Skills"]?.length ? (
+                            analysis["Unmatched Skills"].map((skill, i) => (
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">
+                                {skill}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500">No unmatched skills</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Strengths */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Strengths</p>
+                        <div className="flex flex-wrap gap-1">
+                          {analysis.Strengths?.length ? (
+                            analysis.Strengths.map((strength, i) => (
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {strength}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500">No strengths identified</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Recommendations */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Recommendations</p>
+                        <div className="space-y-1">
+                          {analysis.Recommendations?.length ? (
+                            analysis.Recommendations.map((rec, i) => (
+                              <div key={i} className="flex items-start p-2 bg-blue-50 rounded-md border border-blue-200">
+                                <FontAwesomeIcon icon={faLightbulb} className="text-blue-500 text-xs mt-0.5 mr-1 flex-shrink-0" />
+                                <span className="text-xs text-gray-700">{rec}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500">No recommendations available</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="space-y-1 text-xs">
-                      <div className="analysis-metric">
-                        <span className="analysis-label text-xs">Required Industrial Experience:</span>
-                        <span className="analysis-value text-xs">{analysis["Required Industrial Experience"] || "N/A"}</span>
+                  </div>
+                </div>
+                
+                {/* Experience Metrics Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faUserClock} />
+                      Experience Metrics
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500">Required Industrial Experience</p>
+                          <p className="text-xs font-medium text-gray-900 mt-1">{analysis["Required Industrial Experience"] || "N/A"}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-gray-500">Candidate's Experience</p>
+                          <p className="text-xs font-medium text-gray-900 mt-1">{analysis["Candidate Industrial Experience"] || "N/A"}</p>
+                        </div>
                       </div>
-                      <div className="analysis-metric">
-                        <span className="analysis-label text-xs">Candidate Industrial Experience:</span>
-                        <span className="analysis-value text-xs">{analysis["Candidate Industrial Experience"] || "N/A"}</span>
+                      
+                      <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500">Required Domain Experience</p>
+                          <p className="text-xs font-medium text-gray-900 mt-1">{analysis["Required Domain Experience"] || "N/A"}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-gray-500">Candidate's Experience</p>
+                          <p className="text-xs font-medium text-gray-900 mt-1">{analysis["Candidate Domain Experience"] || "N/A"}</p>
+                        </div>
                       </div>
-                      <div className="analysis-metric">
-                        <span className="analysis-label text-xs">Required Domain Experience:</span>
-                        <span className="analysis-value text-xs">{analysis["Required Domain Experience"] || "N/A"}</span>
+                      
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Compliance Status</p>
+                        <div>
+                          {analysis["Experience Threshold Compliance"] ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              analysis["Experience Threshold Compliance"].includes("meet") 
+                                ? "bg-green-100 text-green-800" 
+                                : "bg-amber-100 text-amber-800"
+                            }`}>
+                              <FontAwesomeIcon 
+                                icon={analysis["Experience Threshold Compliance"].includes("meet") ? faCheck : faExclamationTriangle} 
+                                className="mr-1" 
+                              />
+                              {analysis["Experience Threshold Compliance"]}
+                            </span>
+                          ) : (
+                            <p className="text-xs text-gray-500">N/A</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="analysis-metric">
-                        <span className="analysis-label text-xs">Candidate Domain Experience:</span>
-                        <span className="analysis-value text-xs">{analysis["Candidate Domain Experience"] || "N/A"}</span>
-                      </div>
-                      {/* New fields */}
-                      <div className="analysis-metric">
-                        <span className="analysis-label text-xs">Experience Threshold Compliance:</span>
-                        <span className="analysis-value text-xs">{analysis["Experience Threshold Compliance"] || "N/A"}</span>
-                      </div>
-                      <div className="analysis-metric">
-                        <span className="analysis-label text-xs">Recent Experience Relevance:</span>
-                        <span className="analysis-value text-xs">{analysis["Recent Experience Relevance"] || "N/A"}</span>
+                      
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Recent Experience Relevance</p>
+                        <div>
+                          {analysis["Recent Experience Relevance"] ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800">
+                              {analysis["Recent Experience Relevance"]}
+                            </span>
+                          ) : (
+                            <p className="text-xs text-gray-500">N/A</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    
-                    {/* Analysis Summary */}
-                    <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
-                      <h4 className="text-xs font-semibold text-gray-900 mb-1">Analysis Summary</h4>
-                      <p className="text-xs text-gray-700">{analysis["Analysis Summary"] || "No summary available"}</p>
-                    </div>
+                  </div>
+                </div>
+                
+                {/* Analysis Summary Card */}
+                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+                  <div className="bg-gradient-to-r from-gray-600 to-gray-800 px-3 py-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FontAwesomeIcon icon={faClipboardList} />
+                      Analysis Summary
+                    </h3>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-xs text-gray-700">
+                      {analysis["Analysis Summary"] || "No analysis summary available"}
+                    </p>
                   </div>
                 </div>
               </div>
