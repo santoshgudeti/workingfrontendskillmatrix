@@ -18,6 +18,7 @@ import History from './History';
 import CandidateDetailsPage from './CandidateDetailsPage';
 import DocumentCollectionDashboard from './DocumentCollection/DocumentCollectionDashboard';
 import TemplateManagement from './Templates/TemplateManagement';
+import IndustrialOfferLetterGenerator from './IndustrialOfferLetterGenerator';
 
 // Import new components for candidate assessment workflow
 
@@ -165,6 +166,9 @@ function Dashboard({ onLogout }) {
               
               {/* Add this new route for template management */}
               <Route path="templates" element={<TemplateManagement />} />
+              
+              {/* Industrial-Grade Offer Letter Generator Route */}
+              <Route path="industrial-offer-generator" element={<IndustrialOfferLetterGenerator />} />
             </Routes>
           </div>
         </motion.main>

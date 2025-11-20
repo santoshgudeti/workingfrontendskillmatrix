@@ -588,11 +588,11 @@ const CandidateDetailsPage = () => {
     let intervalId;
     
     if (documentCollectionId) {
-      // 🔥 FIX: Check document collection status every 3 seconds (more frequent for real-time updates)
+      // 🔥 FIX: Check document collection status every 30 seconds instead of 3 seconds to reduce server load
       intervalId = setInterval(() => {
         console.log('🔄 Periodic refresh triggered for document collection:', documentCollectionId);
         refreshDocumentCollectionStatus();
-      }, 3000); // Reduced from 10 seconds to 3 seconds for faster updates
+      }, 30000); // Increased from 3 seconds to 30 seconds to reduce server load
     }
     
     // Also refresh when window gains focus
@@ -1228,8 +1228,8 @@ const CandidateDetailsPage = () => {
       // Use deduplicated toast
       documentToast.rejected(documentCollectionId, rejectionReason);
       
-      // Refresh the document collection status
-      setTimeout(refreshDocumentCollectionStatus, 1000);
+      // Refresh the document collection status - reduced frequency
+      setTimeout(refreshDocumentCollectionStatus, 5000);
     } catch (error) {
       console.error('Error rejecting documents:', error);
       debouncedToast.error('Failed to reject documents', `reject-docs-error-${documentCollectionId}`);
@@ -1460,8 +1460,8 @@ const CandidateDetailsPage = () => {
               <Button
                 onClick={() => {
                   setShowDocumentCollectionModal(true);
-                  // Refresh status when modal is opened
-                  setTimeout(refreshDocumentCollectionStatus, 1000);
+                  // Refresh status when modal is opened - reduced frequency
+                  setTimeout(refreshDocumentCollectionStatus, 5000);
                 }}
                 className={`${
                   documentCollectionId 
