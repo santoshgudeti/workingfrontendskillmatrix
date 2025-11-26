@@ -9,6 +9,7 @@ import ResponseTable from "../Dashboard/ResponseTable";
 import AdminDashboard from "../ProfileSection/AdminDashboard";
 import AdminUserDetail from "../ProfileSection/AdminUserDetail";
 import UserProfile from "../ProfileSection/UserProfile";
+import LeadsManagement from "../ProfileSection/LeadsManagement";
 import ScheduleTestPage from '../ScheduledTest/ScheduleTestPage';
 import ScheduledTestsList from '../ScheduledTest/ScheduledTestsList';
 import ScheduledTestDetails from '../ScheduledTest/ScheduledTestDetails';
@@ -157,6 +158,9 @@ function Dashboard({ onLogout }) {
               {/* Admin Routes */}
               <Route path="admin/*" element={<AdminDashboard />} />
               <Route path="admin/users/:id" element={<AdminUserDetail />} />
+              
+              {/* Leads Management Route (Admin Only) */}
+              <Route path="leads" element={<LeadsManagement />} />
 
               {/* User Profile Route */}
               <Route path="user" element={<UserProfile />} />

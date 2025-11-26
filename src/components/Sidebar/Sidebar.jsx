@@ -16,7 +16,8 @@ import {
   faXmark,
   faAngleLeft,
   faAngleRight,
-  faFileUpload
+  faFileUpload,
+  faEnvelope
 } from '@fortawesome/free-solid-svg-icons';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -130,6 +131,7 @@ function Sidebar({ onLogout, onSidebarToggle, collapsed: propCollapsed, isMobile
     { to: '/dashboard/admin', icon: faHome, text: 'Admin Dashboard', exact: true },
     { to: '/dashboard/admin/users', icon: faUsers, text: 'User Management' },
     { to: '/dashboard/admin/pending', icon: faClock, text: 'Pending Approvals' },
+    { to: '/dashboard/leads', icon: faEnvelope, text: 'Leads Management' },
     { to: '/dashboard/document-collection', icon: faFileUpload, text: 'Document Collection' },
     { to: '/dashboard/templates', icon: faFileLines, text: 'Email Templates' },
     { to: '/dashboard/industrial-offer-generator', icon: faFileLines, text: 'Offer Letter Generator' },
