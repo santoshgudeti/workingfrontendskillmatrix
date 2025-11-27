@@ -533,7 +533,6 @@ const AdvancedOfferEditor = ({
   const [activeTab, setActiveTab] = useState('form');
   const [isLoading, setIsLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
-  const [showValidationAlert, setShowValidationAlert] = useState(false);
   const [salaryBreakdown, setSalaryBreakdown] = useState({
     earnings: [
       { name: 'Basic Salary', amount: 0 },
@@ -813,19 +812,40 @@ const AdvancedOfferEditor = ({
   const handleSave = async () => {
     // Validate form first
     if (!validateForm()) {
-      const missingFields = Object.values(validationErrors);
-      setShowValidationAlert(true);
+      const missingFields = Object.keys(validationErrors);
       
-      // Show alert with missing fields
-      const alertMessage = `Please fill in the following required fields:\n\n${missingFields.join('\n')}`;
+      // Show professional toast with list of missing fields
+      const fieldsList = missingFields.map(field => {
+        const fieldNames = {
+          candidateName: 'Candidate Name',
+          candidateEmail: 'Candidate Email',
+          position: 'Position/Job Title',
+          startDate: 'Start Date',
+          salary: 'Annual Salary (CTC)',
+          hrName: 'HR Name',
+          hrEmail: 'HR Email',
+          hrPhone: 'HR Phone',
+          companyName: 'Company Name'
+        };
+        return fieldNames[field] || field;
+      }).join(', ');
       
-      const userConfirmed = window.confirm(
-        `${alertMessage}\n\nDo you want to proceed anyway? (Not recommended)`
+      toast.error(
+        <div>
+          <div className="font-semibold mb-2">Please fill in the required fields:</div>
+          <div className="text-sm">{fieldsList}</div>
+        </div>,
+        {
+          position: 'top-center',
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
       );
       
-      if (!userConfirmed) {
-        return; // Don't proceed if user cancels
-      }
+      return; // Don't proceed if validation fails
     }
 
     try {
@@ -848,7 +868,7 @@ const AdvancedOfferEditor = ({
       onClose();
     } catch (error) {
       console.error('Error saving offer:', error);
-      toast.error('Failed to save offer letter');
+      toast.error('Failed to save offer letter. Please try again.');
     } finally {
       setIsLoading(false);
     }
