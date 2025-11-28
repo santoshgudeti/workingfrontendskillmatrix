@@ -13,6 +13,64 @@ import { servicesData } from '../data/servicesData';
 const ServiceDetailPage = () => {
   const { serviceId } = useParams();
 
+  // Helper function to get color values
+  const getServiceColor = (color, shade) => {
+    const colors = {
+      blue: {
+        100: '#dbeafe',
+        500: '#3b82f6',
+        700: '#1d4ed8'
+      },
+      emerald: {
+        100: '#d1fae5',
+        500: '#10b981',
+        700: '#047857'
+      },
+      purple: {
+        100: '#ede9fe',
+        500: '#8b5cf6',
+        700: '#6d28d9'
+      },
+      orange: {
+        100: '#ffedd5',
+        500: '#f97316',
+        700: '#c2410c'
+      },
+      pink: {
+        100: '#fce7f3',
+        500: '#ec4899',
+        700: '#db2777'
+      },
+      cyan: {
+        100: '#cffafe',
+        500: '#06b6d4',
+        700: '#0e7490'
+      },
+      teal: {
+        100: '#ccfbf1',
+        500: '#14b8a6',
+        700: '#0f766e'
+      },
+      indigo: {
+        100: '#e0e7ff',
+        500: '#6366f1',
+        700: '#4338ca'
+      },
+      rose: {
+        100: '#ffe4e6',
+        500: '#f43f5e',
+        700: '#e11d48'
+      },
+      amber: {
+        100: '#fef3c7',
+        500: '#f59e0b',
+        700: '#b45309'
+      }
+    };
+    
+    return colors[color]?.[shade] || '#6b7280'; // fallback to gray
+  };
+
   // Extended service details (features, benefits, use cases)
 const serviceDetails = {
  'jd-resume-upload': {
@@ -596,33 +654,49 @@ const serviceDetails = {
               </div>
             </motion.div>
 
-            {/* Service Preview Card */}
+            {/* Service Video Player with Animations */}
             <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, x: 30, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
               transition={{ duration: 0.6, delay: 0.2 }}
               className="relative"
             >
-              <div className="relative aspect-video rounded-2xl overflow-hidden shadow-2xl ring-4 ring-white/20 bg-gradient-to-br from-white/95 to-white/90 backdrop-blur-xl">
-                {/* Service Icon & Info */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
-                  <div className="w-32 h-32 rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-6 shadow-2xl">
-                    <service.icon className="w-16 h-16 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-3 text-center">
-                    {service.title}
-                  </h3>
-                  <p className="text-gray-600 text-center max-w-md mb-6">
-                    Contact our team for a live demonstration of this service
-                  </p>
-                  <a href="https://cognitbotz.com" target="_blank" rel="noopener noreferrer">
-                    <Button size="lg" className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-xl hover:shadow-2xl">
-                      Request Demo
-                      <FiArrowRight className="w-5 h-5" />
-                    </Button>
-                  </a>
-                </div>
+              <div className="relative aspect-video rounded-2xl overflow-hidden shadow-2xl ring-4 ring-white/20 backdrop-blur-xl">
+                {/* Video Player */}
+                <motion.video
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="w-full h-full object-cover"
+                  src={service.videoEmbedUrl}
+                  controls
+                  autoPlay={false}
+                  loop
+                  muted
+                  playsInline
+                />
+                
+                {/* Video Overlay Gradient */}
+                <div className="absolute inset-0 pointer-events-none" style={{
+                  background: `linear-gradient(to bottom right, ${getServiceColor(service.accentColor, 500)}20, ${getServiceColor(service.accentColor, 700)}20)`
+                }} />
+                
               </div>
+              
+              {/* Video Title */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="mt-4 text-center"
+              >
+                <h3 className="text-xl font-bold text-white">
+                  {service.title} Demo
+                </h3>
+                <p className="text-white/80 text-sm mt-1">
+                  Watch how this feature works in practice
+                </p>
+              </motion.div>
             </motion.div>
           </div>
         </div>
@@ -656,8 +730,12 @@ const serviceDetails = {
               >
                 <Card variant="default" className="h-full hover:shadow-lg transition-shadow">
                   <CardContent className="p-6">
-                    <div className={`w-12 h-12 rounded-lg bg-${service.accentColor}-100 flex items-center justify-center mb-4`}>
-                      <feature.icon className={`w-6 h-6 text-${service.accentColor}-600`} />
+                    <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-4" style={{
+                      backgroundColor: `${getServiceColor(service.accentColor, 100)}40`
+                    }}>
+                      <feature.icon className="w-6 h-6" style={{
+                        color: getServiceColor(service.accentColor, 600)
+                      }} />
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
                     <p className="text-gray-600 leading-relaxed">{feature.description}</p>

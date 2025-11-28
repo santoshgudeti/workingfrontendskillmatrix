@@ -507,6 +507,177 @@ const LandingPage = () => {
         </div>
       </section>
 
+
+      <section className="py-24 bg-gradient-to-b from-white to-gray-50">
+        <div className="container-modern">
+          <motion.div
+            className="text-center max-w-3xl mx-auto mb-16"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <h2 className="text-5xl md:text-6xl font-black text-gray-900 mb-8">
+              See SkillMatrix in <span className="bg-gradient-to-r from-cyan-600 via-blue-600 to-violet-600 bg-clip-text text-transparent">Action</span>
+            </h2>
+            <p className="text-2xl text-gray-600 font-semibold">
+              Watch our product demos to see how SkillMatrix transforms your hiring workflow
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-12">
+            {/* External Job Posting Demo */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="bg-white rounded-3xl shadow-2xl overflow-hidden border-2 border-gray-200 hover:border-blue-300 transition-all duration-300"
+            >
+              <div className="relative pb-[56.25%] h-0"> {/* 16:9 Aspect Ratio */}
+                <iframe
+                  className="absolute top-0 left-0 w-full h-full rounded-b-3xl"
+                  src="https://www.youtube.com/embed/VvpWH89J7Yo?si=aCdJjt4TIhJ13qDz"
+                  title="External Job Posting Demo"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              </div>
+              <div className="p-8">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-6">
+                  <FiGlobe className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-3xl font-black text-gray-900 mb-4">External Job Posting</h3>
+                <p className="text-gray-600 text-lg font-semibold mb-6">
+                  See how easy it is to create and publish job postings that candidates can apply to directly.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Main SkillMatrix Demo */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2 }}
+              className="bg-white rounded-3xl shadow-2xl overflow-hidden border-2 border-gray-200 hover:border-blue-300 transition-all duration-300"
+            >
+              <div className="relative pb-[56.25%] h-0"> {/* 16:9 Aspect Ratio */}
+                <iframe
+                  className="absolute top-0 left-0 w-full h-full rounded-t-3xl"
+                  src="https://www.youtube.com/embed/Q0OeDYSORrI?si=43auqlhvTN7p5fe2"
+                  title="Complete SkillMatrix Demo"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              </div>
+              <div className="p-8">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-6">
+                  <FiPlayCircle className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-3xl font-black text-gray-900 mb-4">Complete SkillMatrix Demo</h3>
+                <p className="text-gray-600 text-lg font-semibold mb-6">
+                  Full walkthrough of our AI-powered recruitment platform from start to finish.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+
+      {/* Testimonials Section - Social Proof */}
+      <section className="section-modern">
+        <div className="container-modern">
+          <motion.div 
+            className="text-center max-w-3xl mx-auto mb-16"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-black mb-8">
+              Trusted by <span className="bg-gradient-to-r from-cyan-600 via-blue-600 to-violet-600 bg-clip-text text-transparent">hiring teams</span> everywhere
+            </h2>
+            <p className="text-xl md:text-2xl text-gray-600 font-semibold">See what our customers have to say about SkillMatrix ATS</p>
+          </motion.div>
+          
+          <motion.div 
+            className="grid md:grid-cols-3 gap-6"
+            variants={containerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+          >
+            {[
+              {
+                name: "Alex Brown",
+                role: "HR Director, TechCorp",
+                avatar: "AB",
+                content: "SkillMatrix ATS has completely transformed our hiring process. We've reduced time-to-hire by 40% and found better candidates for our technical roles.",
+                rating: 5
+              },
+              {
+                name: "Sarah Johnson",
+                role: "Recruitment Lead, Finance Pro",
+                avatar: "SJ",
+                content: "The resume matching features in SkillMatrix ATS are incredibly accurate. We're now spending less time screening candidates and more time on meaningful interviews.",
+                rating: 5
+              },
+              {
+                name: "Michael Patel",
+                role: "CEO, StartUp Innovate",
+                avatar: "MP",
+                content: "As a growing company, we needed an ATS that could scale with us. SkillMatrix has been the perfect solution, helping us build our team efficiently and effectively.",
+                rating: 5
+              }
+            ].map((testimonial, index) => (
+              <motion.div key={index} variants={itemVariants}>
+                <Card variant="default" className="h-full shadow-xl hover:shadow-2xl transition-all duration-300 border-2 border-gray-200 hover:border-blue-300 hover:scale-105">
+                  <CardContent className="p-8 md:p-10">
+                    {/* Rating */}
+                    <div className="flex items-center gap-1.5 mb-6">
+                      {[...Array(testimonial.rating)].map((_, i) => (
+                        <FiStar key={i} className="w-5 h-5 text-yellow-400 fill-current drop-shadow-lg" />
+                      ))}
+                    </div>
+                    
+                    {/* Content */}
+                    <p className="text-gray-800 leading-relaxed mb-8 text-base md:text-lg font-semibold italic">
+                      "{testimonial.content}"
+                    </p>
+                    
+                    {/* Author */}
+                    <div className="flex items-center gap-4">
+                      <Avatar variant="primary" size="lg" name={testimonial.name} />
+                      <div>
+                        <div className="font-black text-gray-900 text-base md:text-lg">{testimonial.name}</div>
+                        <div className="text-sm md:text-base text-gray-500 font-semibold">{testimonial.role}</div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </motion.div>
+          
+          {/* CTA to view more testimonials */}
+          <div className="text-center mt-12">
+            <Link to="/about">
+              <Button variant="outline" size="lg" className="border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-black px-10 py-4 hover:scale-105 transition-all duration-300 shadow-lg">
+                More Success Stories
+                <FiArrowRight className="w-5 h-5" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Demo Videos Section */}
+     
+
       {/* FAQ Section */}
       <section className="section-modern bg-gradient-to-b from-gray-50 to-white">
         <div className="container-modern max-w-4xl">
@@ -851,6 +1022,9 @@ const LandingPage = () => {
           </div>
         </div>
       </section>
+
+      {/* Demo Videos Section */}
+      
     </div>
   )
 }
